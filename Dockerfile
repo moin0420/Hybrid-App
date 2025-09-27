@@ -11,6 +11,9 @@ COPY frontend/package*.json ./
 # Install frontend dependencies inside container
 RUN npm install
 
+# Give execute permission to all bin scripts
+RUN chmod -R +x ./node_modules/.bin
+
 # Copy the rest of frontend source code
 COPY frontend/ ./
 
@@ -27,6 +30,7 @@ WORKDIR /app/backend
 # Copy backend package files and install dependencies
 COPY backend/package*.json ./
 RUN npm install
+
 
 # Copy backend source code
 COPY backend/ ./
