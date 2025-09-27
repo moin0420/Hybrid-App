@@ -4,6 +4,7 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ ./
+RUN chmod +x /app/frontend/node_modules/.bin/react-scripts
 RUN npm run build
 
 # Stage 2: Backend

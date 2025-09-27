@@ -1,29 +1,39 @@
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
-import express from 'express';
-import path from 'path';
+import express from "express";
+import sqlite3 from "sqlite3";
+import { open } from "sqlite";
+import path from "path";
+import cors from "cors";
+import bodyParser from "body-parser";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Serve React build
-app.use(express.static(path.join(path.resolve(), '../frontend/build')));
+app.use(cors());
+app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, "../frontend/build")));
 
-// Initialize DB
+// Open SQLite database
 const db = await open({
-  filename: './database.db',
+  filename: "./database.db",
   driver: sqlite3.Database
 });
 
-// Sample route
-app.get('/api/data', async (req, res) => {
-  const rows = await db.all('SELECT * FROM table_name');
-  res.json(rows);
+// Example API route
+app.get("/api/items", async (req, res) => {
+  const items = await db.all("SELECT * FROM items");
+  res.json(items);
 });
 
-// Serve React for any other route
-app.get('*', (req, res) => {
-  res.sendFile(path.join(path.resolve(), '../frontend/build', 'index.html'));
+// Serve React frontend
+app.get("/*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Start server
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
