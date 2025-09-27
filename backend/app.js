@@ -1,51 +1,29 @@
-import express from "express";
-import cors from "cors";
-import path from "path";
-import Database from "better-sqlite3";
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
+import express from 'express';
+import path from 'path';
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+const PORT = process.env.PORT || 5000;
 
-// Serve frontend build
-app.use(express.static(path.join(process.cwd(), "public")));
-app.get("/", (req, res) => {
-  res.sendFile(path.join(process.cwd(), "public", "index.html"));
+// Serve React build
+app.use(express.static(path.join(path.resolve(), '../frontend/build')));
+
+// Initialize DB
+const db = await open({
+  filename: './database.db',
+  driver: sqlite3.Database
 });
 
-// SQLite DB
-const db = new Database("db.sqlite");
-db.prepare(`
-  CREATE TABLE IF NOT EXISTS requisitions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    working TEXT,
-    assigned_recruiter TEXT
-  )
-`).run();
-
-// API routes
-app.get("/api/requisitions", (req, res) => {
-  const rows = db.prepare("SELECT * FROM requisitions").all();
+// Sample route
+app.get('/api/data', async (req, res) => {
+  const rows = await db.all('SELECT * FROM table_name');
   res.json(rows);
 });
 
-app.post("/api/requisitions", (req, res) => {
-  const { name, working, assigned_recruiter } = req.body;
-  db.prepare(
-    "INSERT INTO requisitions (name, working, assigned_recruiter) VALUES (?, ?, ?)"
-  ).run(name, working, assigned_recruiter);
-  res.json({ success: true });
+// Serve React for any other route
+app.get('*', (req, res) => {
+  res.sendFile(path.join(path.resolve(), '../frontend/build', 'index.html'));
 });
 
-app.put("/api/requisitions/:id", (req, res) => {
-  const { working, assigned_recruiter } = req.body;
-  const { id } = req.params;
-  const resetRecruiter = working.toLowerCase() !== "yes" ? "" : assigned_recruiter;
-  db.prepare(
-    "UPDATE requisitions SET working = ?, assigned_recruiter = ? WHERE id = ?"
-  ).run(working.charAt(0).toUpperCase() + working.slice(1).toLowerCase(), resetRecruiter, id);
-  res.json({ success: true });
-});
-
-app.listen(5000, () => console.log("Backend running on port 5000"));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
