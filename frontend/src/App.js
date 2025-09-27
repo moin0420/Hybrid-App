@@ -1,39 +1,66 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import "./app.css";
 
 function App() {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]);
 
-  // Fetch data from backend
-  useEffect(() => {
-    axios
-      .get("/api/test")
-      .then((res) => {
-        setData([{ id: 1, message: res.data.message }]); // example row
-        setLoading(false);
-      })
-      .catch((err) => console.error(err));
-  }, []);
+  useEffect(() => fetchRows(), []);
 
-  if (loading) return <div className="loading">Loading...</div>;
+  const fetchRows = async () => {
+    const res = await axios.get("/api/requisitions");
+    setRows(res.data);
+  };
+
+  const handleChange = async (id, field, value) => {
+    const updatedRows = [...rows];
+    const row = updatedRows.find(r => r.id === id);
+
+    if (field === "working") {
+      if (value.toLowerCase() === "yes") {
+        const existing = updatedRows.find(r => r.working.toLowerCase() === "yes");
+        if (existing && existing.id !== id) {
+          alert("You're already working on another requisition. Please mark it free and try again.");
+          return;
+        }
+      }
+      row.working = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+      row.assigned_recruiter = value.toLowerCase() !== "yes" ? "" : row.assigned_recruiter;
+    } else row.assigned_recruiter = value;
+
+    setRows(updatedRows);
+    await axios.put(`/api/requisitions/${id}`, row);
+  };
 
   return (
     <div className="container">
-      <h1>Hybrid App</h1>
+      <h1>Requisitions</h1>
       <table>
         <thead>
           <tr>
-            <th>ID</th>
-            <th>Message</th>
+            <th>Name</th>
+            <th>Working</th>
+            <th>Assigned Recruiter</th>
           </tr>
         </thead>
         <tbody>
-          {data.map((row) => (
+          {rows.map(row => (
             <tr key={row.id}>
-              <td>{row.id}</td>
-              <td>{row.message}</td>
+              <td>{row.name}</td>
+              <td>
+                <input
+                  type="text"
+                  value={row.working}
+                  onChange={e => handleChange(row.id, "working", e.target.value)}
+                />
+              </td>
+              <td>
+                <input
+                  type="text"
+                  value={row.assigned_recruiter}
+                  onChange={e => handleChange(row.id, "assigned_recruiter", e.target.value)}
+                />
+              </td>
             </tr>
           ))}
         </tbody>

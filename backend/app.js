@@ -1,36 +1,51 @@
 import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
 import cors from "cors";
+import path from "path";
+import Database from "better-sqlite3";
 
-// Initialize Express
 const app = express();
-const PORT = process.env.PORT || 5000;
-
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Resolve __dirname in ES module scope
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Serve React frontend build
-app.use(express.static(path.join(__dirname, "public")));
-
+// Serve frontend build
+app.use(express.static(path.join(process.cwd(), "public")));
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.join(process.cwd(), "public", "index.html"));
 });
 
-// Example API route
-app.get("/api/test", (req, res) => {
-  res.json({ message: "API working!" });
+// SQLite DB
+const db = new Database("db.sqlite");
+db.prepare(`
+  CREATE TABLE IF NOT EXISTS requisitions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    working TEXT,
+    assigned_recruiter TEXT
+  )
+`).run();
+
+// API routes
+app.get("/api/requisitions", (req, res) => {
+  const rows = db.prepare("SELECT * FROM requisitions").all();
+  res.json(rows);
 });
 
-// TODO: Add your database integration & other API routes here
-// Example: CRUD routes for "requisitions", "working", "assigned recruiter", etc.
-
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+app.post("/api/requisitions", (req, res) => {
+  const { name, working, assigned_recruiter } = req.body;
+  db.prepare(
+    "INSERT INTO requisitions (name, working, assigned_recruiter) VALUES (?, ?, ?)"
+  ).run(name, working, assigned_recruiter);
+  res.json({ success: true });
 });
+
+app.put("/api/requisitions/:id", (req, res) => {
+  const { working, assigned_recruiter } = req.body;
+  const { id } = req.params;
+  const resetRecruiter = working.toLowerCase() !== "yes" ? "" : assigned_recruiter;
+  db.prepare(
+    "UPDATE requisitions SET working = ?, assigned_recruiter = ? WHERE id = ?"
+  ).run(working.charAt(0).toUpperCase() + working.slice(1).toLowerCase(), resetRecruiter, id);
+  res.json({ success: true });
+});
+
+app.listen(5000, () => console.log("Backend running on port 5000"));
