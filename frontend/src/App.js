@@ -1,91 +1,45 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import "./app.css";
 
-const App = () => {
+function App() {
   const [data, setData] = useState([]);
-  const [filters, setFilters] = useState({});
+  const [loading, setLoading] = useState(true);
 
-  const user = "currentUser"; // Replace with login user info
-
-  const fetchData = async () => {
-    const res = await axios.get("http://localhost:5000/requisitions");
-    setData(res.data);
-  };
-
+  // Fetch data from backend
   useEffect(() => {
-    fetchData();
+    axios
+      .get("/api/test")
+      .then((res) => {
+        setData([{ id: 1, message: res.data.message }]); // example row
+        setLoading(false);
+      })
+      .catch((err) => console.error(err));
   }, []);
 
-  const handleFilter = (key, value) => {
-    setFilters({ ...filters, [key]: value });
-  };
-
-  const filteredData = data.filter((row) =>
-    Object.keys(filters).every((key) =>
-      String(row[key]).toLowerCase().includes(
-        (filters[key] || "").toLowerCase()
-      )
-    )
-  );
-
-  const handleWorkingChange = async (id, value, assignedRecruiter) => {
-    try {
-      await axios.post(
-        `http://localhost:5000/requisitions/${id}/update`,
-        { working: value, assignedRecruiter, user }
-      );
-      fetchData();
-    } catch (err) {
-      alert(err.response.data.error);
-    }
-  };
+  if (loading) return <div className="loading">Loading...</div>;
 
   return (
     <div className="container">
-      <h1>Requisitions Table</h1>
+      <h1>Hybrid App</h1>
       <table>
         <thead>
           <tr>
-            {data[0] &&
-              Object.keys(data[0]).map((key) => (
-                <th key={key}>
-                  {key}
-                  <br />
-                  <input
-                    placeholder={`Filter ${key}...`}
-                    onChange={(e) => handleFilter(key, e.target.value)}
-                  />
-                </th>
-              ))}
+            <th>ID</th>
+            <th>Message</th>
           </tr>
         </thead>
         <tbody>
-          {filteredData.map((row) => (
+          {data.map((row) => (
             <tr key={row.id}>
-              {Object.keys(row).map((key) => (
-                <td key={key}>
-                  {key === "working" ? (
-                    <input
-                      value={row[key]}
-                      onChange={(e) =>
-                        handleWorkingChange(
-                          row.id,
-                          e.target.value,
-                          row.assignedRecruiter
-                        )
-                      }
-                    />
-                  ) : (
-                    row[key]
-                  )}
-                </td>
-              ))}
+              <td>{row.id}</td>
+              <td>{row.message}</td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
   );
-};
+}
 
 export default App;

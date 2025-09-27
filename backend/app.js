@@ -1,51 +1,36 @@
 import express from "express";
-import sqlite3 from "sqlite3";
+import path from "path";
+import { fileURLToPath } from "url";
 import cors from "cors";
 
+// Initialize Express
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Open database
-const db = new sqlite3.Database("./database.sqlite", (err) => {
-  if (err) {
-    console.error("❌ Error opening database:", err.message);
-  } else {
-    console.log("✅ Connected to SQLite database.");
-    db.run(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        text TEXT
-      )
-    `);
-  }
-});
+// Resolve __dirname in ES module scope
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// Routes
+// Serve React frontend build
+app.use(express.static(path.join(__dirname, "public")));
+
 app.get("/", (req, res) => {
-  res.send("✅ Backend is running!");
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-app.get("/api/messages", (req, res) => {
-  db.all("SELECT * FROM messages", [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
+// Example API route
+app.get("/api/test", (req, res) => {
+  res.json({ message: "API working!" });
 });
 
-app.post("/api/messages", (req, res) => {
-  const { text } = req.body;
-  if (!text) return res.status(400).json({ error: "Message text required" });
-
-  db.run("INSERT INTO messages (text) VALUES (?)", [text], function (err) {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ id: this.lastID, text });
-  });
-});
+// TODO: Add your database integration & other API routes here
+// Example: CRUD routes for "requisitions", "working", "assigned recruiter", etc.
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });

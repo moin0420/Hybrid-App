@@ -1,91 +1,50 @@
-/* app.css: Responsive, polished, modern UI */
-
 body {
+  font-family: Arial, sans-serif;
   margin: 0;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background-color: #f4f7f9;
-  color: #333;
+  padding: 0;
+  background-color: #f2f2f2;
 }
 
 .container {
+  width: 90%;
   max-width: 1200px;
-  margin: 30px auto;
-  padding: 20px;
+  margin: 50px auto;
   background-color: #fff;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.1);
-  border-radius: 12px;
-  overflow-x: auto; /* horizontal scroll if table too wide */
+  padding: 20px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  overflow-x: auto;
 }
 
 h1 {
   text-align: center;
-  margin-bottom: 30px;
-  font-size: 2rem;
-  color: #1f2937;
+  margin-bottom: 20px;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed; /* maintain column widths */
 }
 
-th, td {
-  border: 1px solid #e0e0e0;
-  padding: 12px 10px;
-  word-wrap: break-word;
+table th,
+table td {
+  border: 1px solid #ddd;
+  padding: 10px;
   text-align: left;
-  vertical-align: middle;
 }
 
-th {
-  background-color: #f8fafc;
-  position: sticky;
-  top: 0;
-  z-index: 2;
+table th {
+  background-color: #007bff;
+  color: white;
 }
 
-th input {
-  width: 95%;
-  margin-top: 6px;
-  padding: 4px 6px;
-  font-size: 0.9rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+table tr:nth-child(even) {
+  background-color: #f9f9f9;
 }
 
-tr:nth-child(even) {
-  background-color: #f9fafb;
-}
-
-tr:hover {
-  background-color: #e6f7ff;
-}
-
-input[type="text"], select {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 6px 8px;
-  border-radius: 4px;
-  border: 1px solid #d1d5db;
-  transition: border-color 0.2s;
-}
-
-input[type="text"]:focus, select:focus {
-  border-color: #3b82f6;
-  outline: none;
-}
-
-button {
-  background-color: #3b82f6;
-  color: #fff;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-button:hover {
-  background-color: #2563eb;
+.loading {
+  text-align: center;
+  margin-top: 100px;
+  font-size: 24px;
+  color: #555;
 }
