@@ -1,97 +1,91 @@
 import React, { useEffect, useState } from "react";
-import "./App.css";
+import axios from "axios";
 
-function App() {
+const App = () => {
   const [data, setData] = useState([]);
   const [filters, setFilters] = useState({});
 
+  const user = "currentUser"; // Replace with login user info
+
   const fetchData = async () => {
-    const res = await fetch("http://localhost:5000/api/requirements");
-    const rows = await res.json();
-    setData(rows);
+    const res = await axios.get("http://localhost:5000/requisitions");
+    setData(res.data);
   };
 
   useEffect(() => {
     fetchData();
   }, []);
 
-  const handleFilterChange = (col, value) => {
-    setFilters({ ...filters, [col]: value });
+  const handleFilter = (key, value) => {
+    setFilters({ ...filters, [key]: value });
   };
 
   const filteredData = data.filter((row) =>
-    Object.keys(filters).every((col) =>
-      String(row[col]).toLowerCase().includes(String(filters[col] || "").toLowerCase())
+    Object.keys(filters).every((key) =>
+      String(row[key]).toLowerCase().includes(
+        (filters[key] || "").toLowerCase()
+      )
     )
   );
 
-  const handleCellChange = async (id, col, value, assigned_recruiter) => {
-    const updated = { ...data.find((d) => d.id === id), [col]: value };
-    if (col === "working") {
-      updated.working = value.toLowerCase() === "yes" ? "Yes" : "";
-      if (updated.working === "") updated.assigned_recruiter = "";
-      else updated.assigned_recruiter = assigned_recruiter || "You";
-    }
+  const handleWorkingChange = async (id, value, assignedRecruiter) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/requirements/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updated),
-      });
-      const updatedRow = await res.json();
-      if (res.status === 400) alert(updatedRow.error);
+      await axios.post(
+        `http://localhost:5000/requisitions/${id}/update`,
+        { working: value, assignedRecruiter, user }
+      );
       fetchData();
     } catch (err) {
-      console.error(err);
+      alert(err.response.data.error);
     }
   };
 
   return (
-    <div className="App">
-      <h1>Requirements</h1>
-      <div className="table-container">
-        <table>
-          <thead>
-            <tr>
-              {data[0] &&
-                Object.keys(data[0]).map((col) => (
-                  <th key={col}>
-                    {col}
+    <div className="container">
+      <h1>Requisitions Table</h1>
+      <table>
+        <thead>
+          <tr>
+            {data[0] &&
+              Object.keys(data[0]).map((key) => (
+                <th key={key}>
+                  {key}
+                  <br />
+                  <input
+                    placeholder={`Filter ${key}...`}
+                    onChange={(e) => handleFilter(key, e.target.value)}
+                  />
+                </th>
+              ))}
+          </tr>
+        </thead>
+        <tbody>
+          {filteredData.map((row) => (
+            <tr key={row.id}>
+              {Object.keys(row).map((key) => (
+                <td key={key}>
+                  {key === "working" ? (
                     <input
-                      type="text"
-                      placeholder="Filter..."
-                      value={filters[col] || ""}
-                      onChange={(e) => handleFilterChange(col, e.target.value)}
+                      value={row[key]}
+                      onChange={(e) =>
+                        handleWorkingChange(
+                          row.id,
+                          e.target.value,
+                          row.assignedRecruiter
+                        )
+                      }
                     />
-                  </th>
-                ))}
+                  ) : (
+                    row[key]
+                  )}
+                </td>
+              ))}
             </tr>
-          </thead>
-          <tbody>
-            {filteredData.map((row) => (
-              <tr key={row.id}>
-                {Object.keys(row).map((col) => (
-                  <td key={col}>
-                    {col === "working" || col === "assigned_recruiter" ? (
-                      <input
-                        type="text"
-                        value={row[col]}
-                        onChange={(e) =>
-                          handleCellChange(row.id, col, e.target.value, row.assigned_recruiter)
-                        }
-                      />
-                    ) : (
-                      row[col]
-                    )}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
-}
+};
 
 export default App;

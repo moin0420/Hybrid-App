@@ -1,23 +1,20 @@
-# Use official Node.js image
-FROM node:18
-
-# Set working directory
-WORKDIR /app
-
-# Copy everything
-COPY . .
-
-# Install frontend dependencies and build
+# Stage 1: Build frontend
+FROM node:18 AS frontend-build
 WORKDIR /app/frontend
+COPY frontend/package*.json ./
 RUN npm install
+COPY frontend/ ./
 RUN npm run build
 
-# Install backend dependencies
+# Stage 2: Backend
+FROM node:18
 WORKDIR /app/backend
-RUN npm install
+COPY backend/package*.json ./
+RUN npm install          # <-- installs native modules inside Linux
+COPY backend/ ./
 
-# Expose port for backend
+# Copy frontend build into backend static folder
+COPY --from=frontend-build /app/frontend/build ./public
+
 EXPOSE 5000
-
-# Start backend
 CMD ["node", "app.js"]
