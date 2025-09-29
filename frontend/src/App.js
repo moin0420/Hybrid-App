@@ -1,87 +1,115 @@
-// frontend/src/App.js
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import "./App.css"; // keep the filename you actually have
+import "./App.css";
 
 function App() {
   const [rows, setRows] = useState([]);
+  const currentUser = "User1"; // Replace with login logic if needed
 
-  useEffect(() => {
-    fetchRows();
-  }, []);
+  useEffect(() => fetchRows(), []);
 
   const fetchRows = async () => {
-    try {
-      const res = await axios.get("/api/requisitions");
-      setRows(res.data);
-    } catch (err) {
-      console.error("Failed to fetch rows", err);
-    }
+    const res = await axios.get("/api/requisitions");
+    setRows(res.data);
   };
 
   const handleChange = async (id, field, value) => {
-    // make a new rows array (immutable update)
-    const updatedRows = rows.map(r => (r.id === id ? { ...r } : r));
+    const updatedRows = [...rows];
     const row = updatedRows.find(r => r.id === id);
-    if (!row) return;
 
     if (field === "working") {
-      const valLower = typeof value === "string" ? value.toLowerCase() : "";
-      if (valLower === "yes") {
-        const existing = updatedRows.find(
-          r => r.id !== id && typeof r.working === "string" && r.working.toLowerCase() === "yes"
-        );
+      if (!row.working) { // Trying to check
+        const existing = updatedRows.find(r => r.working);
         if (existing) {
-          alert("You're already working on another requisition. Please mark it free and try again.");
+          alert("Another user is already working on a requisition. Please try a different one.");
           return;
         }
-      }
-      row.working = value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
-      if (value.toLowerCase() !== "yes") {
+        row.working = true;
+        row.assigned_recruiter = currentUser;
+      } else { // Unchecking
+        row.working = false;
         row.assigned_recruiter = "";
       }
     } else {
-      row.assigned_recruiter = value;
+      row[field] = value;
     }
 
     setRows(updatedRows);
+    await axios.put(`/api/requisitions/${id}`, row);
+  };
 
-    try {
-      await axios.put(`/api/requisitions/${id}`, row);
-    } catch (err) {
-      console.error("Failed to update", err);
-      // Optionally: reload rows from server to resync
-      fetchRows();
-    }
+  const addRow = async () => {
+    const res = await axios.post("/api/requisitions", {});
+    setRows([...rows, res.data]);
   };
 
   return (
     <div className="container">
       <h1>Requisitions</h1>
+      <button onClick={addRow}>Add Row</button>
       <table>
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Working</th>
+            <th>Client Name</th>
+            <th>Requirement ID</th>
+            <th>Job Title</th>
+            <th>Status</th>
+            <th>Slots</th>
             <th>Assigned Recruiter</th>
+            <th>Working</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(row => (
             <tr key={row.id}>
-              <td>{row.name}</td>
               <td>
                 <input
                   type="text"
-                  value={row.working || ""}
-                  onChange={e => handleChange(row.id, "working", e.target.value)}
+                  value={row.client_name || ""}
+                  onChange={e => handleChange(row.id, "client_name", e.target.value)}
                 />
               </td>
               <td>
                 <input
                   type="text"
-                  value={row.assigned_recruiter || ""}
-                  onChange={e => handleChange(row.id, "assigned_recruiter", e.target.value)}
+                  value={row.requirement_id || ""}
+                  onChange={e => handleChange(row.id, "requirement_id", e.target.value)}
+                />
+              </td>
+              <td>
+                <input
+                  type="text"
+                  value={row.job_title || ""}
+                  onChange={e => handleChange(row.id, "job_title", e.target.value)}
+                />
+              </td>
+              <td>
+                <select
+                  value={row.status || "Open"}
+                  onChange={e => handleChange(row.id, "status", e.target.value)}
+                >
+                  <option>Open</option>
+                  <option>On hold</option>
+                  <option>Filled</option>
+                  <option>Closed</option>
+                  <option>Cancelled</option>
+                </select>
+              </td>
+              <td>
+                <input
+                  type="number"
+                  value={row.slots || 1}
+                  onChange={e => handleChange(row.id, "slots", parseInt(e.target.value) || 1)}
+                />
+              </td>
+              <td>
+                <input type="text" value={row.assigned_recruiter || ""} readOnly />
+              </td>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={row.working || false}
+                  onChange={() => handleChange(row.id, "working")}
                 />
               </td>
             </tr>
