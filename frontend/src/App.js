@@ -1,7 +1,7 @@
 // frontend/src/App.js
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import "./app.css"; // keep the filename you actually have
+import "./App.css"; // keep the filename you actually have
 
 function App() {
   const [rows, setRows] = useState([]);
