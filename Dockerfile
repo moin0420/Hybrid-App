@@ -13,6 +13,7 @@ WORKDIR /app/backend
 COPY backend/package*.json ./
 RUN npm install
 COPY backend/ ./
-COPY --from=frontend-build /app/frontend/build ../frontend/build
+# copy built frontend into backend
+COPY --from=frontend-build /app/frontend/build /app/frontend/build
 EXPOSE 5000
 CMD ["node", "app.js"]
