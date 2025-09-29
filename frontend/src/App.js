@@ -24,8 +24,10 @@ function App() {
   useEffect(() => fetchRows(), []);
 
   useEffect(() => {
-    socket.on("row-updated", (updatedRow) => setRows(prev => prev.map(r => r.id === updatedRow.id ? updatedRow : r)));
-    socket.on("row-added", (newRow) => {
+    socket.on("row-updated", updatedRow => {
+      setRows(prev => prev.map(r => r.id === updatedRow.id ? updatedRow : r));
+    });
+    socket.on("row-added", newRow => {
       setRows(prev => [...prev, newRow]);
       setHighlightedRows(prev => [...prev, newRow.id]);
       setTimeout(() => setHighlightedRows(prev => prev.filter(id => id !== newRow.id)), 2000);
@@ -47,15 +49,13 @@ function App() {
     const row = updatedRows.find(r => r.id === id);
     const isLockedByOther = row.locked_by && row.locked_by !== userName;
     if (isLockedByOther) return;
+
     const isWorkable = row.status === "Open" && row.slots > 0;
 
     if (field === "working") {
       if (!isWorkable) return;
-      if (!row.working) {
-        const existing = updatedRows.find(r => r.working);
-        if (existing) { alert("Another user is working on a row."); return; }
-        row.working = true; row.assigned_recruiter = userName;
-      } else { row.working = false; row.assigned_recruiter = ""; }
+      row.working = !row.working;
+      row.assigned_recruiter = row.working ? userName : "";
     } else { row[field] = value; }
 
     setRows(updatedRows);
@@ -67,7 +67,7 @@ function App() {
     catch (err) { console.error(err); alert("Error adding new row"); }
   };
 
-  const getStatusColor = (status) => {
+  const getStatusColor = status => {
     switch (status) {
       case "Open": return "#28a745";
       case "On hold": return "#ffc107";
@@ -99,16 +99,10 @@ function App() {
             const isWorkable = row.status === "Open" && row.slots > 0;
             const isLockedByOther = row.locked_by && row.locked_by !== userName;
             return (
-              <tr
-                key={row.id}
-                className={
-                  highlightedRows.includes(row.id)
-                    ? "highlight-row"
-                    : isLockedByOther
-                    ? "locked-row"
-                    : row.locked_by === userName
-                    ? "working-row"
-                    : ""
+              <tr key={row.id} className={
+                  highlightedRows.includes(row.id) ? "highlight-row" :
+                  isLockedByOther ? "locked-row" :
+                  row.locked_by === userName ? "working-row" : ""
                 }
                 data-user={isLockedByOther ? `Working: ${row.locked_by}` : ""}
               >
@@ -126,9 +120,7 @@ function App() {
                 </td>
                 <td><input type="number" value={row.slots || 0} disabled={isLockedByOther || row.working} onChange={e => handleChange(row.id, "slots", e.target.value)} /></td>
                 <td>{isWorkable ? row.assigned_recruiter || "" : "Non-Workable"}</td>
-                <td>
-                  <input type="checkbox" checked={row.working || false} disabled={!isWorkable || isLockedByOther} onChange={() => handleChange(row.id, "working")} />
-                </td>
+                <td><input type="checkbox" checked={row.working || false} disabled={!isWorkable || isLockedByOther} onChange={() => handleChange(row.id, "working")} /></td>
               </tr>
             );
           })}

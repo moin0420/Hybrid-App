@@ -24,28 +24,42 @@ const pool = new Pool({ connectionString: process.env.DB_URL, ssl: { rejectUnaut
 
 io.on("connection", (socket) => console.log("User connected:", socket.id));
 
+// Get all requisitions
 app.get("/api/requisitions", async (req, res) => {
-  try { const { rows } = await pool.query("SELECT * FROM requisitions ORDER BY id"); res.json(rows); }
-  catch (err) { console.error(err); res.status(500).json({ error: "Database error" }); }
+  try {
+    const { rows } = await pool.query("SELECT * FROM requisitions ORDER BY id");
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
 });
 
+// Update a row
 app.put("/api/requisitions/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { client_name, requirement_id, job_title, status, slots, working, current_user } = req.body;
+
     const { rows: existingRows } = await pool.query("SELECT * FROM requisitions WHERE id=$1", [id]);
     if (!existingRows[0]) return res.status(404).json({ error: "Row not found" });
+
     const row = existingRows[0];
+    const isLockedByOther = row.locked_by && row.locked_by !== current_user;
+    if (isLockedByOther) return res.status(403).json({ error: "Row locked by another user" });
 
-    if (row.locked_by && row.locked_by !== current_user) return res.status(403).json({ error: "Row locked by another user" });
+    const isWorkable = status === "Open" && slots > 0;
+    let assigned_recruiter = row.assigned_recruiter;
+    let locked_by = row.locked_by;
+
     if (working) {
-      if (row.status !== "Open" || row.slots <= 0) return res.status(400).json({ error: "Row is non-workable" });
-      const { rows: otherWorking } = await pool.query("SELECT * FROM requisitions WHERE working=true AND id<>$1", [id]);
-      if (otherWorking.length > 0) return res.status(400).json({ error: "Another user is already working on a row" });
+      if (!isWorkable) return res.status(400).json({ error: "Row is non-workable" });
+      assigned_recruiter = current_user;
+      locked_by = current_user;
+    } else {
+      assigned_recruiter = "";
+      locked_by = null;
     }
-
-    const assigned_recruiter = working ? current_user : "";
-    const locked_by = working ? current_user : null;
 
     const { rows: updatedRows } = await pool.query(
       `UPDATE requisitions
@@ -57,22 +71,27 @@ app.put("/api/requisitions/:id", async (req, res) => {
 
     io.emit("row-updated", updatedRows[0]);
     res.json(updatedRows[0]);
-  } catch (err) { console.error(err); res.status(500).json({ error: "Database update error" }); }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database update error" });
+  }
 });
 
+// Add a new row
 app.post("/api/requisitions", async (req, res) => {
   try {
-    const { client_name, requirement_id, job_title, status, slots } = req.body;
     const { rows } = await pool.query(
       `INSERT INTO requisitions
-         (client_name, requirement_id, job_title, status, slots, working, assigned_recruiter, locked_by)
-       VALUES ($1,$2,$3,$4,$5,false,'',NULL)
-       RETURNING *`,
-      [client_name || "", requirement_id || "", job_title || "", status || "Open", slots || 1]
+       (client_name, requirement_id, job_title, status, slots, working, assigned_recruiter, locked_by)
+       VALUES ($1,$2,$3,$4,$5,false,'',NULL) RETURNING *`,
+      ["", "", "", "Open", 1]
     );
     io.emit("row-added", rows[0]);
     res.json(rows[0]);
-  } catch (err) { console.error(err); res.status(500).json({ error: "Database insert error" }); }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database insert error" });
+  }
 });
 
 app.get("/*", (req, res) => res.sendFile(path.join(__dirname, "../frontend/build/index.html")));
