@@ -4,7 +4,22 @@ import "./App.css";
 
 function App() {
   const [rows, setRows] = useState([]);
-  const currentUser = "User1"; // Replace with login logic if needed
+  const [userName, setUserName] = useState("");
+
+  // Prompt for user name
+  useEffect(() => {
+    const storedName = localStorage.getItem("recruiterName");
+    if (storedName) {
+      setUserName(storedName);
+    } else {
+      let name = "";
+      while (!name) {
+        name = prompt("Please enter your name:");
+      }
+      setUserName(name);
+      localStorage.setItem("recruiterName", name);
+    }
+  }, []);
 
   useEffect(() => fetchRows(), []);
 
@@ -17,16 +32,20 @@ function App() {
     const updatedRows = [...rows];
     const row = updatedRows.find(r => r.id === id);
 
+    const isWorkable = row.status === "Open" && row.slots > 0;
+
     if (field === "working") {
-      if (!row.working) { // Trying to check
+      if (!isWorkable) return;
+
+      if (!row.working) {
         const existing = updatedRows.find(r => r.working);
         if (existing) {
-          alert("Another user is already working on a requisition. Please try a different one.");
+          alert("Another user is already working on a row. Try a different one.");
           return;
         }
         row.working = true;
-        row.assigned_recruiter = currentUser;
-      } else { // Unchecking
+        row.assigned_recruiter = userName;
+      } else {
         row.working = false;
         row.assigned_recruiter = "";
       }
@@ -35,7 +54,7 @@ function App() {
     }
 
     setRows(updatedRows);
-    await axios.put(`/api/requisitions/${id}`, row);
+    await axios.put(`/api/requisitions/${id}`, { ...row, current_user: userName });
   };
 
   const addRow = async () => {
@@ -43,10 +62,21 @@ function App() {
     setRows([...rows, res.data]);
   };
 
+  const getStatusColor = (status) => {
+    switch (status) {
+      case "Open": return "#28a745";
+      case "On hold": return "#ffc107";
+      case "Filled": return "#17a2b8";
+      case "Closed": return "#6c757d";
+      case "Cancelled": return "#dc3545";
+      default: return "#007bff";
+    }
+  };
+
   return (
     <div className="container">
-      <h1>Requisitions</h1>
-      <button onClick={addRow}>Add Row</button>
+      <h1>Requisitions Dashboard</h1>
+      <button className="add-btn" onClick={addRow}>+ Add Row</button>
       <table>
         <thead>
           <tr>
@@ -60,60 +90,71 @@ function App() {
           </tr>
         </thead>
         <tbody>
-          {rows.map(row => (
-            <tr key={row.id}>
-              <td>
-                <input
-                  type="text"
-                  value={row.client_name || ""}
-                  onChange={e => handleChange(row.id, "client_name", e.target.value)}
-                />
-              </td>
-              <td>
-                <input
-                  type="text"
-                  value={row.requirement_id || ""}
-                  onChange={e => handleChange(row.id, "requirement_id", e.target.value)}
-                />
-              </td>
-              <td>
-                <input
-                  type="text"
-                  value={row.job_title || ""}
-                  onChange={e => handleChange(row.id, "job_title", e.target.value)}
-                />
-              </td>
-              <td>
-                <select
-                  value={row.status || "Open"}
-                  onChange={e => handleChange(row.id, "status", e.target.value)}
-                >
-                  <option>Open</option>
-                  <option>On hold</option>
-                  <option>Filled</option>
-                  <option>Closed</option>
-                  <option>Cancelled</option>
-                </select>
-              </td>
-              <td>
-                <input
-                  type="number"
-                  value={row.slots || 1}
-                  onChange={e => handleChange(row.id, "slots", parseInt(e.target.value) || 1)}
-                />
-              </td>
-              <td>
-                <input type="text" value={row.assigned_recruiter || ""} readOnly />
-              </td>
-              <td>
-                <input
-                  type="checkbox"
-                  checked={row.working || false}
-                  onChange={() => handleChange(row.id, "working")}
-                />
-              </td>
-            </tr>
-          ))}
+          {rows.map(row => {
+            const isWorkable = row.status === "Open" && row.slots > 0;
+            return (
+              <tr key={row.id}>
+                <td>
+                  <input
+                    type="text"
+                    value={row.client_name || ""}
+                    onChange={e => handleChange(row.id, "client_name", e.target.value)}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={row.requirement_id || ""}
+                    onChange={e => handleChange(row.id, "requirement_id", e.target.value)}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={row.job_title || ""}
+                    onChange={e => handleChange(row.id, "job_title", e.target.value)}
+                  />
+                </td>
+                <td>
+                  <select
+                    value={row.status || "Open"}
+                    onChange={e => handleChange(row.id, "status", e.target.value)}
+                    style={{ backgroundColor: getStatusColor(row.status), color: "#fff", fontWeight: "bold" }}
+                  >
+                    <option>Open</option>
+                    <option>On hold</option>
+                    <option>Filled</option>
+                    <option>Closed</option>
+                    <option>Cancelled</option>
+                  </select>
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    value={row.slots || 1}
+                    min="0"
+                    onChange={e => handleChange(row.id, "slots", parseInt(e.target.value) || 0)}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    value={isWorkable ? (row.assigned_recruiter || "") : "Non-Workable"}
+                    readOnly
+                    className={isWorkable ? "" : "non-workable"}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={row.working || false}
+                    onChange={() => handleChange(row.id, "working")}
+                    disabled={!isWorkable}
+                  />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -4,18 +4,15 @@
 FROM node:18 AS frontend-build
 WORKDIR /app/frontend
 
-# Copy package.json and package-lock.json
+# Copy frontend package.json and install dependencies
 COPY frontend/package*.json ./
-
-# Install frontend dependencies
 RUN npm install
 
-# Copy frontend source code
+# Copy frontend source and build
 COPY frontend/ ./
 
 RUN chmod +x /app/frontend/node_modules/.bin/react-scripts
 
-# Build React frontend
 RUN npm run build
 
 # ==============================
@@ -24,16 +21,14 @@ RUN npm run build
 FROM node:18
 WORKDIR /app/backend
 
-# Copy backend package.json and package-lock.json
+# Copy backend package.json and install dependencies
 COPY backend/package*.json ./
-
-# Install backend dependencies
 RUN npm install
 
 # Copy backend source code
 COPY backend/ ./
 
-# Copy frontend build from previous stage
+# Copy frontend build
 COPY --from=frontend-build /app/frontend/build ../frontend/build
 
 # Expose backend port
