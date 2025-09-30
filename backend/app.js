@@ -1,43 +1,40 @@
+// backend/app.js
 import express from "express";
-import cors from "cors";
 import bodyParser from "body-parser";
-import pkg from "pg";
+import cors from "cors";
+import dotenv from "dotenv";
 import { Server } from "socket.io";
 import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
+import pkg from "pg";
+
+dotenv.config();
 
 const { Pool } = pkg;
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: "*", // in production, restrict to your frontend domain
   },
 });
 
-const PORT = process.env.PORT || 5000;
-
-// Middleware
-app.use(cors());
-app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, "../frontend/build")));
-
-// Database connection
+// 🔹 DB connection
 const pool = new Pool({
   connectionString: process.env.DB_URL,
+  ssl: { rejectUnauthorized: false }, // Render requires SSL
 });
 
-// ✅ New friendly root route
-app.get("/", (req, res) => {
-  res.send("✅ Backend is running! Use /api/requisitions to fetch data.");
-});
+app.use(cors());
+app.use(bodyParser.json());
 
-// API: Get all requisitions
+// --------------------
+// API ROUTES
+// --------------------
+
+// Get all requisitions
 app.get("/api/requisitions", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM requisitions ORDER BY id ASC");
@@ -48,69 +45,64 @@ app.get("/api/requisitions", async (req, res) => {
   }
 });
 
-// API: Add a new requisition row
+// Add new requisition row
 app.post("/api/requisitions", async (req, res) => {
   try {
     const { client_name, requirement_id, job_title, status, slots } = req.body;
     const result = await pool.query(
-      `INSERT INTO requisitions 
-        (client_name, requirement_id, job_title, status, slots, assigned_recruiter, working) 
-        VALUES ($1, $2, $3, $4, $5, '', false) RETURNING *`,
+      `INSERT INTO requisitions (client_name, requirement_id, job_title, status, slots, assigned_recruiter, working) 
+       VALUES ($1, $2, $3, $4, $5, '', false) RETURNING *`,
       [client_name, requirement_id, job_title, status, slots]
     );
-    io.emit("row-added", result.rows[0]); // 🔥 broadcast to all users
-    res.json(result.rows[0]);
+
+    const newRow = result.rows[0];
+    io.emit("row-added", newRow); // 🔥 Realtime broadcast
+    res.json(newRow);
   } catch (err) {
-    console.error("❌ Error adding requisition:", err);
+    console.error("❌ Error inserting row:", err);
     res.status(500).send("Server error");
   }
 });
 
-// API: Update a requisition
+// Update a requisition row
 app.put("/api/requisitions/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { client_name, requirement_id, job_title, status, slots, assigned_recruiter, working } =
-      req.body;
+    const { client_name, requirement_id, job_title, status, slots, assigned_recruiter, working } = req.body;
 
     const result = await pool.query(
-      `UPDATE requisitions SET 
-        client_name = $1,
-        requirement_id = $2,
-        job_title = $3,
-        status = $4,
-        slots = $5,
-        assigned_recruiter = $6,
-        working = $7
-      WHERE id = $8 RETURNING *`,
+      `UPDATE requisitions 
+       SET client_name=$1, requirement_id=$2, job_title=$3, status=$4, slots=$5, assigned_recruiter=$6, working=$7
+       WHERE id=$8 RETURNING *`,
       [client_name, requirement_id, job_title, status, slots, assigned_recruiter, working, id]
     );
 
-    if (result.rows.length > 0) {
-      io.emit("row-updated", result.rows[0]); // 🔥 broadcast to all users
-    }
-
-    res.json(result.rows[0]);
+    const updatedRow = result.rows[0];
+    io.emit("row-updated", updatedRow); // 🔥 Realtime broadcast
+    res.json(updatedRow);
   } catch (err) {
-    console.error("❌ Error updating requisition:", err);
+    console.error("❌ Error updating row:", err);
     res.status(500).send("Server error");
   }
 });
 
-// Fallback: serve React app
-app.get("/*", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
+// --------------------
+// SERVE FRONTEND BUILD
+// --------------------
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const frontendPath = path.join(__dirname, "../frontend/build");
+app.use(express.static(frontendPath));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(frontendPath, "index.html"));
 });
 
-// WebSockets
-io.on("connection", (socket) => {
-  console.log("🔌 New client connected");
-  socket.on("disconnect", () => {
-    console.log("❌ Client disconnected");
-  });
-});
-
-// Start server
+// --------------------
+// START SERVER
+// --------------------
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });

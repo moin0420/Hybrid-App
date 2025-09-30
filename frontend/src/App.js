@@ -1,9 +1,12 @@
+// frontend/src/App.js
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
 import "./App.css";
 
-const socket = io();
+// 🔹 Use REACT_APP_API_URL for backend
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+const socket = io(API_URL);
 
 function App() {
   const [rows, setRows] = useState([]);
@@ -39,7 +42,7 @@ function App() {
 
   const fetchRows = async () => {
     try {
-      const res = await axios.get("/api/requisitions");
+      const res = await axios.get(`${API_URL}/api/requisitions`);
       setRows(res.data);
     } catch (err) {
       console.error("❌ Error fetching rows:", err);
@@ -53,7 +56,7 @@ function App() {
       const rowIndex = updatedRows.findIndex((r) => r.id === id);
       const row = { ...updatedRows[rowIndex], [field]: value };
 
-      // Business logic: working lock
+      // Business logic for working/assigned_recruiter
       if (field === "working") {
         if (row.working) {
           row.assigned_recruiter = username;
@@ -65,7 +68,7 @@ function App() {
       updatedRows[rowIndex] = row;
       setRows(updatedRows);
 
-      await axios.put(`/api/requisitions/${id}`, row);
+      await axios.put(`${API_URL}/api/requisitions/${id}`, row);
       setError("");
     } catch (err) {
       console.error("❌ Error saving changes:", err);
@@ -82,7 +85,7 @@ function App() {
         status: "Open",
         slots: 1,
       };
-      const res = await axios.post("/api/requisitions", newRow);
+      const res = await axios.post(`${API_URL}/api/requisitions`, newRow);
       setRows((prev) => [...prev, res.data]);
       setError("");
     } catch (err) {
