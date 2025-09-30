@@ -2,50 +2,28 @@
 .app-container {
   min-height: 100vh;
   padding: 2rem;
-  background: #f3f4f6; /* light gray */
+  background: #f3f4f6;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 /* Title */
 .title {
   text-align: center;
-  font-size: 2.5rem;
+  font-size: 2rem;
   font-weight: bold;
-  margin-bottom: 2rem;
+  margin-bottom: 1.5rem;
   color: #1f2937;
 }
 
-/* Chart Styles */
-.chart-container {
-  background: #fff;
-  padding: 1.5rem;
-  border-radius: 1rem;
-  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1);
-  margin-bottom: 2rem;
-  transition: transform 0.3s ease;
-}
-
-.chart-container:hover {
-  transform: translateY(-5px);
-}
-
-.chart-title {
-  text-align: center;
-  font-size: 1.5rem;
-  margin-bottom: 1rem;
-  color: #374151;
-}
-
-/* Table */
+/* Table Styles */
 .table-container {
   background: #fff;
   padding: 1rem;
-  border-radius: 1rem;
-  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.05);
+  border-radius: 0.75rem;
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.05);
   overflow-x: auto;
 }
 
-/* Table Interactions */
 table {
   width: 100%;
   border-collapse: collapse;
@@ -66,4 +44,20 @@ th {
 tr:hover {
   background-color: #e0e7ff;
   transition: background-color 0.2s ease;
+}
+
+/* Action Button */
+.action-btn {
+  padding: 0.4rem 0.8rem;
+  background-color: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.action-btn:hover {
+  background-color: #4338ca;
+  transform: translateY(-2px);
 }
