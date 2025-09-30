@@ -1,109 +1,116 @@
 import express from "express";
+import cors from "cors";
 import bodyParser from "body-parser";
 import pkg from "pg";
-import { createServer } from "http";
 import { Server } from "socket.io";
-import cors from "cors";
+import http from "http";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const { Pool } = pkg;
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
-const server = createServer(app);
+const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: {
+    origin: "*",
+  },
 });
 
+const PORT = process.env.PORT || 5000;
+
+// Middleware
 app.use(cors());
 app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, "../frontend/build")));
 
+// Database connection
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  connectionString: process.env.DB_URL,
 });
 
-// Fetch all rows
+// ✅ New friendly root route
+app.get("/", (req, res) => {
+  res.send("✅ Backend is running! Use /api/requisitions to fetch data.");
+});
+
+// API: Get all requisitions
 app.get("/api/requisitions", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM requisitions ORDER BY id ASC");
     res.json(result.rows);
   } catch (err) {
-    console.error("Fetch error:", err);
-    res.status(500).json({ error: "Failed to fetch rows" });
+    console.error("❌ Error fetching requisitions:", err);
+    res.status(500).send("Server error");
   }
 });
 
-// Add new row
+// API: Add a new requisition row
 app.post("/api/requisitions", async (req, res) => {
   try {
+    const { client_name, requirement_id, job_title, status, slots } = req.body;
     const result = await pool.query(
-      `INSERT INTO requisitions (client_name, requirement_id, job_title, status, slots, assigned_recruiter, working, locked_by)
-       VALUES ('', '', '', 'Open', 0, '', false, NULL)
-       RETURNING *`
+      `INSERT INTO requisitions 
+        (client_name, requirement_id, job_title, status, slots, assigned_recruiter, working) 
+        VALUES ($1, $2, $3, $4, $5, '', false) RETURNING *`,
+      [client_name, requirement_id, job_title, status, slots]
     );
-    const newRow = result.rows[0];
-    io.emit("row-added", newRow);
-    res.json(newRow);
+    io.emit("row-added", result.rows[0]); // 🔥 broadcast to all users
+    res.json(result.rows[0]);
   } catch (err) {
-    console.error("Add row error:", err);
-    res.status(500).json({ error: "Failed to add row" });
+    console.error("❌ Error adding requisition:", err);
+    res.status(500).send("Server error");
   }
 });
 
-// Update a row
+// API: Update a requisition
 app.put("/api/requisitions/:id", async (req, res) => {
-  const { id } = req.params;
-  const {
-    client_name,
-    requirement_id,
-    job_title,
-    status,
-    slots,
-    assigned_recruiter,
-    working,
-    current_user,
-  } = req.body;
-
   try {
+    const { id } = req.params;
+    const { client_name, requirement_id, job_title, status, slots, assigned_recruiter, working } =
+      req.body;
+
     const result = await pool.query(
-      `UPDATE requisitions
-       SET client_name = $1,
-           requirement_id = $2,
-           job_title = $3,
-           status = $4,
-           slots = $5,
-           assigned_recruiter = $6,
-           working = $7,
-           locked_by = $8
-       WHERE id = $9
-       RETURNING *`,
-      [
-        client_name || "",
-        requirement_id || "",
-        job_title || "",
-        status || "Open",
-        slots || 0,
-        assigned_recruiter || "",
-        working || false,
-        working ? current_user : null,
-        id,
-      ]
+      `UPDATE requisitions SET 
+        client_name = $1,
+        requirement_id = $2,
+        job_title = $3,
+        status = $4,
+        slots = $5,
+        assigned_recruiter = $6,
+        working = $7
+      WHERE id = $8 RETURNING *`,
+      [client_name, requirement_id, job_title, status, slots, assigned_recruiter, working, id]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Row not found" });
+    if (result.rows.length > 0) {
+      io.emit("row-updated", result.rows[0]); // 🔥 broadcast to all users
     }
 
-    const updatedRow = result.rows[0];
-
-    io.emit("row-updated", updatedRow); // 🔹 broadcast change
-    res.json(updatedRow);
+    res.json(result.rows[0]);
   } catch (err) {
-    console.error("Update error:", err);
-    res.status(500).json({ error: "Failed to update row" });
+    console.error("❌ Error updating requisition:", err);
+    res.status(500).send("Server error");
   }
 });
 
-const PORT = process.env.PORT || 5000;
+// Fallback: serve React app
+app.get("/*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
+});
+
+// WebSockets
+io.on("connection", (socket) => {
+  console.log("🔌 New client connected");
+  socket.on("disconnect", () => {
+    console.log("❌ Client disconnected");
+  });
+});
+
+// Start server
 server.listen(PORT, () => {
-  console.log(`✅ Backend running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });

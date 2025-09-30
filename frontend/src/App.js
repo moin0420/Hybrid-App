@@ -3,141 +3,105 @@ import axios from "axios";
 import { io } from "socket.io-client";
 import "./App.css";
 
-const socket = io("/");
+const socket = io();
 
 function App() {
   const [rows, setRows] = useState([]);
-  const [userName, setUserName] = useState("");
-  const [highlightedRows, setHighlightedRows] = useState([]);
+  const [username, setUsername] = useState(localStorage.getItem("username") || "");
+  const [error, setError] = useState("");
 
-  // Ask for recruiter name once and store in localStorage
   useEffect(() => {
-    const storedName = localStorage.getItem("recruiterName");
-    if (storedName) {
-      setUserName(storedName);
-    } else {
-      let name = "";
-      while (!name) {
-        name = prompt("Enter your name:");
+    if (!username) {
+      const name = prompt("Enter your name:");
+      if (name) {
+        setUsername(name);
+        localStorage.setItem("username", name);
       }
-      setUserName(name);
-      localStorage.setItem("recruiterName", name);
     }
-  }, []);
 
-  // Initial fetch
-  useEffect(() => {
     fetchRows();
-  }, []);
 
-  // Realtime socket listeners
-  useEffect(() => {
     socket.on("row-updated", (updatedRow) => {
       setRows((prev) =>
-        prev.map((r) => (r.id === updatedRow.id ? updatedRow : r))
+        prev.map((row) => (row.id === updatedRow.id ? updatedRow : row))
       );
     });
 
     socket.on("row-added", (newRow) => {
       setRows((prev) => [...prev, newRow]);
-      setHighlightedRows((prev) => [...prev, newRow.id]);
-
-      setTimeout(
-        () => setHighlightedRows((prev) => prev.filter((id) => id !== newRow.id)),
-        2000
-      );
-
-      // Auto scroll to new row
-      setTimeout(() => {
-        const table = document.querySelector("table tbody");
-        const lastRow = table?.lastElementChild;
-        if (lastRow) lastRow.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 100);
     });
 
     return () => {
       socket.off("row-updated");
       socket.off("row-added");
     };
-  }, []);
+  }, [username]);
 
   const fetchRows = async () => {
     try {
       const res = await axios.get("/api/requisitions");
       setRows(res.data);
     } catch (err) {
-      console.error("Fetch error:", err);
+      console.error("❌ Error fetching rows:", err);
+      setError("Error fetching data from server. Please refresh.");
     }
   };
 
   const handleChange = async (id, field, value) => {
-    const row = rows.find((r) => r.id === id);
-    if (!row) return;
-
-    const isLockedByOther = row.locked_by && row.locked_by !== userName;
-    if (isLockedByOther) return;
-
-    const isWorkable = row.status === "Open" && row.slots > 0;
-    let updatedRow = { ...row };
-
-    if (field === "working") {
-      if (!isWorkable) return;
-      updatedRow.working = !row.working;
-      updatedRow.assigned_recruiter = updatedRow.working ? userName : "";
-    } else {
-      updatedRow[field] = value;
-    }
-
     try {
-      // ✅ Always wait for backend to confirm save
-      const res = await axios.put(`/api/requisitions/${id}`, {
-        ...updatedRow,
-        current_user: userName,
-      });
-      const savedRow = res.data;
+      const updatedRows = [...rows];
+      const rowIndex = updatedRows.findIndex((r) => r.id === id);
+      const row = { ...updatedRows[rowIndex], [field]: value };
 
-      // ✅ Replace with backend-confirmed row
-      setRows((prev) =>
-        prev.map((r) => (r.id === savedRow.id ? savedRow : r))
-      );
+      // Business logic: working lock
+      if (field === "working") {
+        if (row.working) {
+          row.assigned_recruiter = username;
+        } else {
+          row.assigned_recruiter = "";
+        }
+      }
+
+      updatedRows[rowIndex] = row;
+      setRows(updatedRows);
+
+      await axios.put(`/api/requisitions/${id}`, row);
+      setError("");
     } catch (err) {
-      console.error("Save failed:", err);
-      alert("Error saving changes. Try again.");
+      console.error("❌ Error saving changes:", err);
+      setError("Error saving changes. Try again.");
     }
   };
 
   const addRow = async () => {
     try {
-      await axios.post("/api/requisitions", {});
+      const newRow = {
+        client_name: "",
+        requirement_id: "",
+        job_title: "",
+        status: "Open",
+        slots: 1,
+      };
+      const res = await axios.post("/api/requisitions", newRow);
+      setRows((prev) => [...prev, res.data]);
+      setError("");
     } catch (err) {
-      console.error("Add row failed:", err);
-      alert("Error adding new row");
-    }
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "Open":
-        return "#28a745";
-      case "On hold":
-        return "#ffc107";
-      case "Filled":
-        return "#17a2b8";
-      case "Closed":
-        return "#6c757d";
-      case "Cancelled":
-        return "#dc3545";
-      default:
-        return "#007bff";
+      console.error("❌ Error adding row:", err);
+      setError("Error adding new row. Try again.");
     }
   };
 
   return (
     <div className="container">
-      <h1>Requisitions Dashboard</h1>
+      <h1>Requisitions</h1>
+
+      {/* 🔴 Error Banner */}
+      {error && <div className="error-banner">{error}</div>}
+
       <button className="add-btn" onClick={addRow}>
-        + Add Row
+        ➕ Add Row
       </button>
+
       <table>
         <thead>
           <tr>
@@ -153,60 +117,57 @@ function App() {
         <tbody>
           {rows.map((row) => {
             const isWorkable = row.status === "Open" && row.slots > 0;
-            const isLockedByOther = row.locked_by && row.locked_by !== userName;
+            const isLockedByOther =
+              row.working && row.assigned_recruiter !== username;
 
             return (
               <tr
                 key={row.id}
                 className={
-                  highlightedRows.includes(row.id)
-                    ? "highlight-row"
-                    : isLockedByOther
+                  isLockedByOther
                     ? "locked-row"
-                    : row.locked_by === userName
-                    ? "working-row"
+                    : row.assigned_recruiter === username
+                    ? "my-row"
                     : ""
                 }
-                data-user={isLockedByOther ? `Working: ${row.locked_by}` : ""}
               >
                 <td>
                   <input
                     type="text"
-                    value={row.client_name || ""}
-                    disabled={isLockedByOther || row.working}
+                    value={row.client_name}
                     onChange={(e) =>
                       handleChange(row.id, "client_name", e.target.value)
                     }
+                    disabled={isLockedByOther}
                   />
                 </td>
                 <td>
                   <input
                     type="text"
-                    value={row.requirement_id || ""}
-                    disabled={isLockedByOther || row.working}
+                    value={row.requirement_id}
                     onChange={(e) =>
                       handleChange(row.id, "requirement_id", e.target.value)
                     }
+                    disabled={isLockedByOther}
                   />
                 </td>
                 <td>
                   <input
                     type="text"
-                    value={row.job_title || ""}
-                    disabled={isLockedByOther || row.working}
+                    value={row.job_title}
                     onChange={(e) =>
                       handleChange(row.id, "job_title", e.target.value)
                     }
+                    disabled={isLockedByOther}
                   />
                 </td>
                 <td>
                   <select
-                    value={row.status || "Open"}
-                    disabled={isLockedByOther || row.working}
-                    style={{ backgroundColor: getStatusColor(row.status) }}
+                    value={row.status}
                     onChange={(e) =>
                       handleChange(row.id, "status", e.target.value)
                     }
+                    disabled={isLockedByOther}
                   >
                     <option>Open</option>
                     <option>On hold</option>
@@ -218,22 +179,29 @@ function App() {
                 <td>
                   <input
                     type="number"
-                    value={row.slots || 0}
-                    disabled={isLockedByOther || row.working}
+                    min="0"
+                    value={row.slots}
                     onChange={(e) =>
-                      handleChange(row.id, "slots", e.target.value)
+                      handleChange(row.id, "slots", parseInt(e.target.value))
                     }
+                    disabled={isLockedByOther}
                   />
                 </td>
                 <td>
-                  {isWorkable ? row.assigned_recruiter || "" : "Non-Workable"}
+                  <input
+                    type="text"
+                    value={isWorkable ? row.assigned_recruiter : "Non-Workable"}
+                    disabled
+                  />
                 </td>
                 <td>
                   <input
                     type="checkbox"
                     checked={row.working || false}
+                    onChange={() =>
+                      handleChange(row.id, "working", !row.working)
+                    }
                     disabled={!isWorkable || isLockedByOther}
-                    onChange={() => handleChange(row.id, "working")}
                   />
                 </td>
               </tr>
