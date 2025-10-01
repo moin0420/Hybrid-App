@@ -23,14 +23,12 @@ function App() {
     }
   }, []);
 
-  // Fetch data from backend
   useEffect(() => {
     const fetchData = async () => {
       try {
         const res = await fetch("/api/requisitions");
         if (!res.ok) throw new Error("Failed to fetch requisitions");
         const data = await res.json();
-        // Ensure boolean for working and strings exist
         const normalized = data.map((r) => ({
           client: r.client ?? "",
           requirementId: r.requirementId ?? r.requirement_id ?? "",
@@ -54,13 +52,11 @@ function App() {
   return (
     <div className="app-container">
       <h1 className="title">Recruitment Requisitions</h1>
-
       <Table
         userName={userName}
         requisitionsFromDB={requisitions}
-        onDataUpdate={(newList) => setRequisitions(newList)} // allow Table to refresh UI
+        onDataUpdate={(newList) => setRequisitions(newList)}
       />
-
       <ToastContainer position="top-right" autoClose={3000} />
     </div>
   );
