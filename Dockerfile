@@ -22,6 +22,7 @@ COPY . .
 
 # Build frontend
 WORKDIR /app/frontend
+RUN chmod +x ./node_modules/.bin/react-scripts
 RUN npm run build
 
 # Move build folder to backend so backend can serve it
