@@ -1,63 +1,157 @@
-/* App Container */
-.app-container {
-  min-height: 100vh;
-  padding: 2rem;
-  background: #f3f4f6;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+/* General layout */
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  background-color: #f8f9fa;
+  margin: 0;
+  padding: 0;
 }
 
-/* Title */
+.app-container {
+  padding: 20px;
+  max-width: 1200px;
+  margin: auto;
+}
+
 .title {
   text-align: center;
-  font-size: 2rem;
+  font-size: 26px;
   font-weight: bold;
-  margin-bottom: 1.5rem;
-  color: #1f2937;
+  color: #333;
+  margin-bottom: 20px;
 }
 
-/* Table Styles */
+/* Table container */
 .table-container {
   background: #fff;
-  padding: 1rem;
-  border-radius: 0.75rem;
-  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.05);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
   overflow-x: auto;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
+/* Actions (above table) */
+.table-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
 }
 
-th, td {
-  padding: 0.75rem 1rem;
-  text-align: left;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-th {
-  background-color: #f9fafb;
-  font-weight: 600;
-  color: #111827;
-}
-
-tr:hover {
-  background-color: #e0e7ff;
-  transition: background-color 0.2s ease;
-}
-
-/* Action Button */
-.action-btn {
-  padding: 0.4rem 0.8rem;
-  background-color: #4f46e5;
+.clear-filters-btn {
+  background-color: #007bff;
   color: #fff;
   border: none;
-  border-radius: 0.5rem;
+  padding: 6px 12px;
+  border-radius: 4px;
   cursor: pointer;
-  transition: background-color 0.2s ease, transform 0.2s ease;
+  font-size: 14px;
+  transition: background 0.2s ease-in-out;
 }
 
-.action-btn:hover {
-  background-color: #4338ca;
-  transform: translateY(-2px);
+.clear-filters-btn:hover {
+  background-color: #0056b3;
+}
+
+/* Table styling */
+.styled-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.styled-table th,
+.styled-table td {
+  border: 1px solid #ddd;
+  padding: 10px;
+  text-align: center;
+}
+
+.styled-table th {
+  background-color: #f1f3f6;
+  font-weight: bold;
+  color: #333;
+}
+
+/* Filters inside header */
+.styled-table th input,
+.styled-table th select {
+  width: 90%;
+  padding: 4px;
+  margin-top: 6px;
+  font-size: 13px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.styled-table th select {
+  cursor: pointer;
+}
+
+/* Table rows */
+.styled-table tr:nth-child(even) {
+  background-color: #fafafa;
+}
+
+.styled-table tr:hover {
+  background-color: #f5f5f5;
+  transition: background 0.2s ease-in-out;
+}
+
+/* Checkbox column */
+.styled-table td input[type="checkbox"] {
+  transform: scale(1.2);
+  cursor: pointer;
+}
+
+/* No data row */
+.styled-table td[colspan="7"] {
+  font-style: italic;
+  color: #888;
+  background: #fdfdfd;
+}
+
+/* ===== Status Colors ===== */
+.status-open {
+  color: #155724;
+  background-color: #d4edda;
+  font-weight: bold;
+  border-radius: 4px;
+  padding: 4px 6px;
+  display: inline-block;
+}
+
+.status-closed {
+  color: #721c24;
+  background-color: #f8d7da;
+  font-weight: bold;
+  border-radius: 4px;
+  padding: 4px 6px;
+  display: inline-block;
+}
+
+.status-onhold {
+  color: #856404;
+  background-color: #fff3cd;
+  font-weight: bold;
+  border-radius: 4px;
+  padding: 4px 6px;
+  display: inline-block;
+}
+
+.status-cancelled {
+  color: #383d41;
+  background-color: #e2e3e5;
+  font-weight: bold;
+  border-radius: 4px;
+  padding: 4px 6px;
+  display: inline-block;
+}
+
+.status-filled {
+  color: #0c5460;
+  background-color: #d1ecf1;
+  font-weight: bold;
+  border-radius: 4px;
+  padding: 4px 6px;
+  display: inline-block;
 }

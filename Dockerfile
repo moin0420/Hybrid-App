@@ -1,41 +1,37 @@
-# -------------------------
-# Stage 1: Build frontend
-# -------------------------
-FROM node:18 AS frontend-build
-
-WORKDIR /app/frontend
-
-# Copy package.json & install dependencies
-COPY frontend/package*.json ./
-RUN npm install
-
-# Copy frontend source code
-COPY frontend/ ./
-
-RUN chmod +x /app/frontend/node_modules/.bin/react-scripts
-
-# Build React frontend
-RUN npm run build
-
-# -------------------------
-# Stage 2: Build backend
-# -------------------------
+# Use Node 18 LTS
 FROM node:18
 
-WORKDIR /app/backend
+# Set working directory
+WORKDIR /app
 
-# Copy backend package.json & install dependencies
-COPY backend/package*.json ./
+# Copy root package.json and lock files if any (optional)
+COPY backend/package*.json ./backend/
+COPY frontend/package*.json ./frontend/
+
+# Install dependencies for backend
+WORKDIR /app/backend
 RUN npm install
 
-# Copy backend source code
-COPY backend/ ./
+# Install dependencies for frontend
+WORKDIR /app/frontend
+RUN npm install
 
-# Copy frontend build from stage 1
-COPY --from=frontend-build /app/frontend/build ../frontend/build
+# Copy all source code
+WORKDIR /app
+COPY . .
+
+# Build frontend
+WORKDIR /app/frontend
+RUN npm run build
+
+# Move build folder to backend so backend can serve it
+RUN mv /app/frontend/build /app/backend/build
+
+# Set working directory to backend
+WORKDIR /app/backend
 
 # Expose backend port
 EXPOSE 5000
 
-# Start the server
+# Start backend server (it will serve frontend from /build)
 CMD ["node", "app.js"]

@@ -1,171 +1,153 @@
 import express from "express";
+import { Pool } from "pg";
+import bodyParser from "body-parser";
+import cors from "cors";
+import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import dotenv from "dotenv";
-import cors from "cors";
-import { createServer } from "http";
-import { Server } from "socket.io";
-import pkg from "pg";
 
 dotenv.config();
 
-const { Pool } = pkg;
+const pool = new Pool({
+  connectionString: process.env.DB_URL
+});
 
-// File paths
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+
+// Initialize table if not exists
+const initTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS requisitions (
+      id SERIAL PRIMARY KEY,
+      requirementId TEXT UNIQUE,
+      client TEXT,
+      title TEXT,
+      status TEXT,
+      slots INTEGER DEFAULT 0,
+      assignedRecruiter TEXT DEFAULT '',
+      working BOOLEAN DEFAULT FALSE
+    );
+  `);
+};
+initTable().catch(console.error);
+
+// Map row to frontend format
+const mapRow = (row) => ({
+  client: row.client,
+  requirementId: row.requirementid,
+  title: row.title,
+  status: row.status,
+  slots: row.slots,
+  assignedRecruiter: row.assignedrecruiter || "",
+  working: row.working,
+});
+
+// ===== API Routes =====
+
+// GET all requisitions
+app.get("/api/requisitions", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM requisitions ORDER BY id DESC");
+    res.json(result.rows.map(mapRow));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "DB read error" });
+  }
+});
+
+// PUT toggle working
+app.put("/api/requisitions/:requirementId", async (req, res) => {
+  const { requirementId } = req.params;
+  const { working, userName } = req.body;
+
+  if (typeof working !== "boolean" || typeof userName !== "string") {
+    return res.status(400).json({ message: "Invalid payload" });
+  }
+
+  try {
+    const result = await pool.query(
+      "SELECT * FROM requisitions WHERE requirementId = $1",
+      [requirementId]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ message: "Requirement not found" });
+
+    const currentAssigned = row.assignedrecruiter || "";
+
+    if (working) {
+      if (currentAssigned && currentAssigned !== "") {
+        return res
+          .status(409)
+          .json({ message: `Already assigned to ${currentAssigned}` });
+      }
+      await pool.query(
+        "UPDATE requisitions SET working = TRUE, assignedRecruiter = $1 WHERE requirementId = $2",
+        [userName, requirementId]
+      );
+      return res.status(200).json({ message: "Assigned successfully" });
+    } else {
+      if (!currentAssigned || currentAssigned === "") {
+        return res.status(200).json({ message: "Already unassigned" });
+      }
+      if (currentAssigned !== userName) {
+        return res
+          .status(409)
+          .json({ message: `Cannot unassign; assigned to ${currentAssigned}` });
+      }
+      await pool.query(
+        "UPDATE requisitions SET working = FALSE, assignedRecruiter = '' WHERE requirementId = $1",
+        [requirementId]
+      );
+      return res.status(200).json({ message: "Unassigned successfully" });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "DB error" });
+  }
+});
+
+// Optional seed endpoint
+app.post("/api/requisitions/seed", async (req, res) => {
+  const items = req.body.items || [];
+  try {
+    for (const it of items) {
+      await pool.query(
+        `INSERT INTO requisitions
+        (requirementId, client, title, status, slots, assignedRecruiter, working)
+        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT (requirementId) DO NOTHING`,
+        [
+          it.requirementId,
+          it.client,
+          it.title,
+          it.status,
+          it.slots || 0,
+          it.assignedRecruiter || "",
+          it.working || false,
+        ]
+      );
+    }
+    res.json({ message: "Seeded" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Seed failed" });
+  }
+});
+
+// ===== Serve React frontend =====
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Initialize Express + HTTP server + Socket.IO
-const app = express();
-const server = createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" },
-});
-
-app.use(cors());
-app.use(express.json());
-
-// ✅ PostgreSQL connection pool
-const pool = new Pool({
-  connectionString: process.env.DB_URL,
-  ssl: { rejectUnauthorized: false },
-});
-
-// ---------------------------------
-// API ROUTES
-// ---------------------------------
-
-// Health check
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok" });
-});
-
-// Get all requisitions
-app.get("/api/requisitions", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM requisitions ORDER BY id ASC");
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Error fetching requisitions:", err);
-    res.status(500).json({ error: "Failed to fetch requisitions" });
-  }
-});
-
-// Add new requisition
-app.post("/api/requisitions", async (req, res) => {
-  try {
-    const { client_name, requirement_id, job_title, status, slots } = req.body;
-    const result = await pool.query(
-      `INSERT INTO requisitions (client_name, requirement_id, job_title, status, slots)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING *`,
-      [client_name, requirement_id, job_title, status, slots]
-    );
-
-    const newRow = result.rows[0];
-    io.emit("rowAdded", newRow);
-    res.json({ success: true, row: newRow });
-  } catch (err) {
-    console.error("Error adding requisition:", err);
-    res.status(500).json({ success: false, error: "Failed to add requisition" });
-  }
-});
-
-// Update requisition field(s)
-app.put("/api/requisitions/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const fields = req.body;
-
-    const updates = [];
-    const values = [];
-    let i = 1;
-
-    for (const key in fields) {
-      updates.push(`${key} = $${i}`);
-      values.push(fields[key]);
-      i++;
-    }
-    values.push(id);
-
-    const query = `UPDATE requisitions SET ${updates.join(", ")} WHERE id = $${i} RETURNING *`;
-    const result = await pool.query(query, values);
-
-    const updatedRow = result.rows[0];
-    io.emit("rowUpdated", updatedRow);
-    res.json(updatedRow);
-  } catch (err) {
-    console.error("Error updating requisition:", err);
-    res.status(500).json({ error: "Failed to update requisition" });
-  }
-});
-
-// Lock row (Working = true)
-app.post("/api/requisitions/:id/lock", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { recruiter } = req.body;
-
-    const result = await pool.query(
-      `UPDATE requisitions
-       SET working = true, assigned_recruiter = $1
-       WHERE id = $2
-       RETURNING *`,
-      [recruiter, id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.json({ success: false, message: "Row not found" });
-    }
-
-    const updatedRow = result.rows[0];
-    io.emit("rowUpdated", updatedRow);
-    res.json({ success: true, row: updatedRow });
-  } catch (err) {
-    console.error("Error locking row:", err);
-    res.status(500).json({ success: false, error: "Failed to lock row" });
-  }
-});
-
-// Unlock row (Working = false)
-app.post("/api/requisitions/:id/unlock", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const result = await pool.query(
-      `UPDATE requisitions
-       SET working = false, assigned_recruiter = ''
-       WHERE id = $1
-       RETURNING *`,
-      [id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.json({ success: false, message: "Row not found" });
-    }
-
-    const updatedRow = result.rows[0];
-    io.emit("rowUpdated", updatedRow);
-    res.json({ success: true, row: updatedRow });
-  } catch (err) {
-    console.error("Error unlocking row:", err);
-    res.status(500).json({ success: false, error: "Failed to unlock row" });
-  }
-});
-
-// ---------------------------------
-// FRONTEND (React build serving)
-// ---------------------------------
-app.use(express.static(path.join(__dirname, "../frontend/build")));
+app.use(express.static(path.join(__dirname, "build")));
 
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
+  res.sendFile(path.join(__dirname, "build", "index.html"));
 });
 
-// ---------------------------------
-// START SERVER
-// ---------------------------------
+// Start server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+app.listen(PORT, () =>
+  console.log(`✅ Backend + Frontend running on port ${PORT}`)
+);

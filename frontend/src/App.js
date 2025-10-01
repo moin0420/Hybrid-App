@@ -1,18 +1,13 @@
-import React, { useState, useEffect } from "react";
+// frontend/src/App.js
+import React, { useEffect, useState } from "react";
 import Table from "./components/Table";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import "./App.css";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 function App() {
   const [userName, setUserName] = useState("");
-  const [chartData, setChartData] = useState([
-    { stage: "Applied", count: 20 },
-    { stage: "Interview", count: 12 },
-    { stage: "Offered", count: 5 },
-    { stage: "Hired", count: 3 },
-  ]);
+  const [requisitions, setRequisitions] = useState([]);
 
   useEffect(() => {
     const storedName = localStorage.getItem("recruiterName");
@@ -28,27 +23,43 @@ function App() {
     }
   }, []);
 
+  // Fetch data from backend
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await fetch("/api/requisitions");
+        if (!res.ok) throw new Error("Failed to fetch requisitions");
+        const data = await res.json();
+        // Ensure boolean for working and strings exist
+        const normalized = data.map((r) => ({
+          client: r.client ?? "",
+          requirementId: r.requirementId ?? r.requirement_id ?? "",
+          title: r.title ?? "",
+          status: r.status ?? "Open",
+          slots: Number.isFinite(r.slots) ? r.slots : Number(r.slots) || 0,
+          assignedRecruiter: r.assignedRecruiter ?? r.assigned_recruiter ?? "",
+          working: Boolean(r.working),
+        }));
+        setRequisitions(normalized);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
+    fetchData();
+  }, []);
+
   if (!userName) return null;
 
   return (
     <div className="app-container">
       <h1 className="title">Recruitment Requisitions</h1>
 
-      {/* Interactive Bar Chart */}
-      <div className="chart-container">
-        <h2 className="chart-title">Recruitment Pipeline</h2>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-            <XAxis dataKey="stage" />
-            <YAxis />
-            <Tooltip />
-            <Bar dataKey="count" fill="#4F46E5" radius={[5, 5, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Table */}
-      <Table userName={userName} />
+      <Table
+        userName={userName}
+        requisitionsFromDB={requisitions}
+        onDataUpdate={(newList) => setRequisitions(newList)} // allow Table to refresh UI
+      />
 
       <ToastContainer position="top-right" autoClose={3000} />
     </div>
