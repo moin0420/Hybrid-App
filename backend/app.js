@@ -4,6 +4,8 @@ import { Pool } from "pg";
 import bodyParser from "body-parser";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
@@ -60,7 +62,7 @@ const mapRow = (row) => ({
 });
 
 // -----------------------------
-// Routes
+// API Routes
 // -----------------------------
 
 // GET all requisitions
@@ -154,7 +156,28 @@ app.post("/api/requisitions/seed", async (req, res) => {
 });
 
 // -----------------------------
+// Serve frontend build
+// -----------------------------
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Serve static files from React frontend
+app.use(express.static(path.join(__dirname, "public")));
+
+// Fallback for React Router / direct paths
+app.get("*", (req, res) => {
+  if (!req.path.startsWith("/api")) {
+    res.sendFile(path.join(__dirname, "public", "index.html"));
+  } else {
+    res.status(404).json({ message: "Not Found" });
+  }
+});
+
+// -----------------------------
 // Start server
 // -----------------------------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Backend + Frontend running on port ${PORT}`));
+app.listen(PORT, () =>
+  console.log(`✅ Backend + Frontend running on port ${PORT}`)
+);
