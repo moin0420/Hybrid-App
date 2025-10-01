@@ -1,7 +1,7 @@
 // frontend/src/App.js
 import React, { useEffect, useState } from "react";
 import Table from "./components/Table";
-import { ToastContainer } from "react-toastify";
+import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import "./App.css";
 
@@ -29,21 +29,22 @@ function App() {
         const res = await fetch("/api/requisitions");
         if (!res.ok) throw new Error("Failed to fetch requisitions");
         const data = await res.json();
-        const normalized = data.map((r) => ({
+        const normalized = (data || []).map((r) => ({
           client: r.client ?? "",
-          requirementId: r.requirementId ?? r.requirement_id ?? "",
+          requirementId: r.requirementId ?? "",
           title: r.title ?? "",
           status: r.status ?? "Open",
-          slots: Number.isFinite(r.slots) ? r.slots : Number(r.slots) || 0,
-          assignedRecruiter: r.assignedRecruiter ?? r.assigned_recruiter ?? "",
+          slots: Number(r.slots) || 0,
+          assignedRecruiter: r.assignedRecruiter ?? "",
           working: Boolean(r.working),
         }));
         setRequisitions(normalized);
       } catch (err) {
         console.error(err);
+        toast.error("Failed to fetch requisitions from backend");
+        setRequisitions([]); // fallback
       }
     };
-
     fetchData();
   }, []);
 

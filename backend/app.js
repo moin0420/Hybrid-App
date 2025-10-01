@@ -3,52 +3,78 @@ import express from "express";
 import { Pool } from "pg";
 import bodyParser from "body-parser";
 import cors from "cors";
-import path from "path";
-import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 
 dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// ====== DATABASE POOL ======
-const pool = new Pool({
-connectionString: process.env.DB_URL,
-});
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// ====== INIT DB TABLE ======
-const initTable = async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS requisitions (
-      id SERIAL PRIMARY KEY,
-      requirementId TEXT UNIQUE,
-      client TEXT,
-      title TEXT,
-      status TEXT,
-      slots INTEGER DEFAULT 0,
-      assignedRecruiter TEXT DEFAULT '',
-      working BOOLEAN DEFAULT FALSE
-    );
-  `);
-};
-initTable().catch(console.error);
+// -----------------------------
+// PostgreSQL Pool with SSL
+// -----------------------------
+const pool = new Pool({
+  connectionString: process.env.DB_URL,
+  ssl: {
+    rejectUnauthorized: false, // required for Render, Railway, etc.
+  },
+});
 
-// ====== API ROUTES ======
+// -----------------------------
+// Initialize table safely
+// -----------------------------
+const initTable = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS requisitions (
+        id SERIAL PRIMARY KEY,
+        requirementId TEXT UNIQUE,
+        client TEXT,
+        title TEXT,
+        status TEXT,
+        slots INTEGER DEFAULT 0,
+        assignedRecruiter TEXT DEFAULT '',
+        working BOOLEAN DEFAULT FALSE
+      );
+    `);
+    console.log("✅ Table initialized successfully");
+  } catch (err) {
+    console.error("❌ Failed to initialize table:", err);
+  }
+};
+
+initTable();
+
+// -----------------------------
+// Map row to frontend format
+// -----------------------------
+const mapRow = (row) => ({
+  client: row.client,
+  requirementId: row.requirementid,
+  title: row.title,
+  status: row.status,
+  slots: row.slots,
+  assignedRecruiter: row.assignedrecruiter || "",
+  working: row.working,
+});
+
+// -----------------------------
+// Routes
+// -----------------------------
+
+// GET all requisitions
 app.get("/api/requisitions", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM requisitions ORDER BY id DESC");
-    res.json(result.rows);
+    res.json(result.rows.map(mapRow));
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "DB read error" });
   }
 });
 
+// PUT toggle working
 app.put("/api/requisitions/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
   const { working, userName } = req.body;
@@ -99,7 +125,7 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
   }
 });
 
-// ====== SEED DATA (OPTIONAL) ======
+// Optional seed endpoint
 app.post("/api/requisitions/seed", async (req, res) => {
   const items = req.body.items || [];
   try {
@@ -127,15 +153,8 @@ app.post("/api/requisitions/seed", async (req, res) => {
   }
 });
 
-// ====== SERVE FRONTEND BUILD ======
-const frontendPath = path.join(__dirname, "../frontend/build");
-app.use(express.static(frontendPath));
-
-// Any non-API request returns React app
-app.get("*", (req, res) => {
-  res.sendFile(path.join(frontendPath, "index.html"));
-});
-
-// ====== START SERVER ======
+// -----------------------------
+// Start server
+// -----------------------------
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`✅ Backend + Frontend running on port ${PORT}`));
