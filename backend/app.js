@@ -1,6 +1,7 @@
 // backend/app.js
 import express from "express";
-import { Pool } from "pg";
+import pkg from "pg";
+const { Pool } = pkg;
 import bodyParser from "body-parser";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -13,45 +14,57 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// PostgreSQL Pool
+// -----------------------------
+// PostgreSQL Pool with SSL
+// -----------------------------
 const pool = new Pool({
   connectionString: process.env.DB_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: {
+    rejectUnauthorized: false, // required for Render, Railway, etc.
+  },
 });
 
-// Initialize table
+// -----------------------------
+// Initialize table safely
+// -----------------------------
 const initTable = async () => {
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS requisitions (
         id SERIAL PRIMARY KEY,
-        requirementId TEXT UNIQUE,
+        requirement_id TEXT UNIQUE,
         client TEXT,
         title TEXT,
         status TEXT,
         slots INTEGER DEFAULT 0,
-        assignedRecruiter TEXT DEFAULT '',
+        assigned_recruiter TEXT DEFAULT '',
         working BOOLEAN DEFAULT FALSE
       );
     `);
-    console.log("✅ Table initialized");
+    console.log("✅ Table initialized successfully");
   } catch (err) {
-    console.error("❌ Table init failed", err);
+    console.error("❌ Failed to initialize table:", err);
   }
 };
+
 initTable();
 
-// Map row
+// -----------------------------
+// Map row to frontend format
+// -----------------------------
 const mapRow = (row) => ({
-  id: row.id,
   client: row.client,
-  requirementId: row.requirementid,
+  requirementId: row.requirement_id,
   title: row.title,
   status: row.status,
   slots: row.slots,
-  assignedRecruiter: row.assignedrecruiter || "",
+  assignedRecruiter: row.assigned_recruiter || "",
   working: row.working,
 });
+
+// -----------------------------
+// API Routes
+// -----------------------------
 
 // GET all requisitions
 app.get("/api/requisitions", async (req, res) => {
@@ -64,100 +77,108 @@ app.get("/api/requisitions", async (req, res) => {
   }
 });
 
-// PUT toggle working
-app.put("/api/requisitions/:requirementId", async (req, res) => {
-  const { requirementId } = req.params;
-  const { working, userName } = req.body;
-
-  if (typeof working !== "boolean" || typeof userName !== "string") {
-    return res.status(400).json({ message: "Invalid payload" });
+// POST add new row
+app.post("/api/requisitions", async (req, res) => {
+  const { requirementId, client, title, status, slots } = req.body;
+  if (!requirementId || !client || !title) {
+    return res.status(400).json({ message: "requirementId, client, and title are required" });
   }
-
-  if (!requirementId) return res.status(400).json({ message: "Requirement ID missing" });
-
-  try {
-    const rowRes = await pool.query("SELECT * FROM requisitions WHERE requirementId=$1", [requirementId]);
-    const row = rowRes.rows[0];
-    if (!row) return res.status(404).json({ message: "Requirement not found" });
-
-    const currentAssigned = row.assignedrecruiter || "";
-
-    if (working) {
-      if (currentAssigned && currentAssigned !== userName)
-        return res.status(409).json({ message: `Already assigned to ${currentAssigned}` });
-
-      await pool.query(
-        "UPDATE requisitions SET working=TRUE, assignedRecruiter=$1 WHERE requirementId=$2",
-        [userName, requirementId]
-      );
-    } else {
-      if (currentAssigned !== userName)
-        return res.status(409).json({ message: `Cannot unassign; assigned to ${currentAssigned}` });
-
-      await pool.query(
-        "UPDATE requisitions SET working=FALSE, assignedRecruiter='' WHERE requirementId=$1",
-        [requirementId]
-      );
-    }
-
-    const updatedRowRes = await pool.query("SELECT * FROM requisitions WHERE requirementId=$1", [requirementId]);
-    res.json({ message: "Updated successfully", updatedRow: updatedRowRes.rows[0] });
-  } catch (err) {
-    console.error("Working toggle error:", err);
-    res.status(500).json({ message: "DB error" });
-  }
-});
-
-// PUT update any row fields
-app.put("/api/requisitions/update/:requirementId", async (req, res) => {
-  const { requirementId } = req.params;
-  const { client, title, status, slots, requirementId: newReqId } = req.body;
-
-  if (!requirementId) return res.status(400).json({ message: "Requirement ID missing" });
 
   try {
     const result = await pool.query(
-      `UPDATE requisitions
-       SET client=$1, title=$2, status=$3, slots=$4, requirementId=$5
-       WHERE id = (SELECT id FROM requisitions WHERE requirementId=$6)
+      `INSERT INTO requisitions
+        (requirement_id, client, title, status, slots)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [client, title, status, slots, newReqId, requirementId]
+      [requirementId, client, title, status || "", slots || 0]
     );
-
-    if (result.rowCount === 0) return res.status(404).json({ message: "Row not found" });
-
-    res.json({ message: "Updated successfully", updatedRow: result.rows[0] });
+    res.status(201).json(mapRow(result.rows[0]));
   } catch (err) {
-    console.error("Row update error:", err);
-    res.status(500).json({ message: "DB update failed" });
-  }
-});
-
-// POST add blank row
-app.post("/api/requisitions/new", async (req, res) => {
-  try {
-    const tempId = `temp_${Date.now()}`;
-    const result = await pool.query(
-      `INSERT INTO requisitions (requirementId, client, title, status, slots)
-       VALUES ($1, '', '', 'Open', 0)
-       RETURNING *`,
-      [tempId]
-    );
-    res.status(201).json({ newRow: result.rows[0] });
-  } catch (err) {
-    console.error("Add row error:", err);
+    console.error(err);
     res.status(500).json({ message: "DB insert failed" });
   }
 });
 
-// Serve frontend
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-app.use(express.static(path.join(__dirname, "public")));
-app.get("*", (req, res) => {
-  if (!req.path.startsWith("/api")) res.sendFile(path.join(__dirname, "public", "index.html"));
+// PUT update row
+app.put("/api/requisitions/:requirementId", async (req, res) => {
+  const { requirementId } = req.params;
+  const { client, title, status, slots, working, userName } = req.body;
+
+  try {
+    // Fetch existing row
+    const result = await pool.query(
+      "SELECT * FROM requisitions WHERE requirement_id = $1",
+      [requirementId]
+    );
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ message: "Requirement not found" });
+
+    // Handle working assignment/unassignment
+    if (typeof working === "boolean" && typeof userName === "string") {
+      const currentAssigned = row.assigned_recruiter || "";
+      if (working) {
+        if (currentAssigned && currentAssigned !== "") {
+          return res.status(409).json({ message: `Already assigned to ${currentAssigned}` });
+        }
+        await pool.query(
+          "UPDATE requisitions SET working = TRUE, assigned_recruiter = $1 WHERE requirement_id = $2",
+          [userName, requirementId]
+        );
+      } else {
+        if (!currentAssigned || currentAssigned === "") {
+          return res.status(200).json({ message: "Already unassigned" });
+        }
+        if (currentAssigned !== userName) {
+          return res.status(409).json({ message: `Cannot unassign; assigned to ${currentAssigned}` });
+        }
+        await pool.query(
+          "UPDATE requisitions SET working = FALSE, assigned_recruiter = '' WHERE requirement_id = $1",
+          [requirementId]
+        );
+      }
+      const updatedRow = await pool.query(
+        "SELECT * FROM requisitions WHERE requirement_id = $1",
+        [requirementId]
+      );
+      return res.json(mapRow(updatedRow.rows[0]));
+    }
+
+    // Handle regular edits
+    const updated = await pool.query(
+      `UPDATE requisitions SET client=$1, title=$2, status=$3, slots=$4
+       WHERE requirement_id=$5 RETURNING *`,
+      [
+        client || row.client,
+        title || row.title,
+        status || row.status,
+        slots !== undefined ? slots : row.slots,
+        requirementId,
+      ]
+    );
+    res.json(mapRow(updated.rows[0]));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "DB Update Failed" });
+  }
 });
 
+// -----------------------------
+// Serve React frontend
+// -----------------------------
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use(express.static(path.join(__dirname, "../frontend/build")));
+
+// Catch-all for React Router
+app.get("*", (req, res) => {
+  if (!req.path.startsWith("/api")) {
+    res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
+  }
+});
+
+// -----------------------------
 // Start server
+// -----------------------------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Backend running on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Backend + Frontend running on port ${PORT}`));
