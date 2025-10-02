@@ -31,25 +31,26 @@ function App() {
   // ---------------------------
   // Fetch requisitions initially
   // ---------------------------
+  const fetchRequisitions = async () => {
+    try {
+      const res = await fetch("/api/requisitions");
+      if (!res.ok) throw new Error("Failed to fetch requisitions");
+      const data = await res.json();
+      setRequisitions(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch("/api/requisitions");
-        if (!res.ok) throw new Error("Failed to fetch requisitions");
-        const data = await res.json();
-        setRequisitions(data);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchData();
+    fetchRequisitions();
   }, []);
 
   // ---------------------------
   // Socket.IO Setup
   // ---------------------------
   useEffect(() => {
-    const newSocket = io(); // automatically connects to backend origin
+    const newSocket = io(); // connects automatically
     setSocket(newSocket);
 
     newSocket.on("connect", () => {
@@ -59,9 +60,7 @@ function App() {
     // Listen for row updates
     newSocket.on("rowUpdated", (updatedRow) => {
       setRequisitions((prev) => {
-        const idx = prev.findIndex(
-          (r) => r.requirementId === updatedRow.requirementId
-        );
+        const idx = prev.findIndex((r) => r.requirementId === updatedRow.requirementId);
         if (idx >= 0) {
           const newList = [...prev];
           newList[idx] = updatedRow;
@@ -73,15 +72,7 @@ function App() {
     });
 
     // Listen for seeding event (refresh everything)
-    newSocket.on("rowsSeeded", async () => {
-      try {
-        const res = await fetch("/api/requisitions");
-        const data = await res.json();
-        setRequisitions(data);
-      } catch (err) {
-        console.error("Failed to refresh after seeding:", err);
-      }
-    });
+    newSocket.on("rowsSeeded", fetchRequisitions);
 
     return () => {
       newSocket.disconnect();
@@ -106,10 +97,10 @@ function App() {
       <Table
         userName={userName}
         requisitionsFromDB={requisitions}
-        onDataUpdate={(newList) => setRequisitions(newList)}
+        onDataUpdate={setRequisitions}
       />
 
-      {/* Invisible div to scroll to */}
+      {/* Invisible div to scroll to new rows */}
       <div ref={tableEndRef} />
 
       <ToastContainer position="top-right" autoClose={3000} />

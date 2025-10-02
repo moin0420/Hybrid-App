@@ -52,6 +52,7 @@ initTable();
 // Map row to frontend format
 // -----------------------------
 const mapRow = (row) => ({
+  id: row.id,
   client: row.client,
   requirementId: row.requirementid,
   title: row.title,
@@ -76,7 +77,7 @@ app.get("/api/requisitions", async (req, res) => {
   }
 });
 
-// PUT toggle working
+// PUT toggle working (assign/unassign) per user
 app.put("/api/requisitions/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
   const { working, userName } = req.body;
@@ -96,25 +97,24 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
     const currentAssigned = row.assignedrecruiter || "";
 
     if (working) {
-      if (currentAssigned && currentAssigned !== "") {
+      if (currentAssigned && currentAssigned !== userName) {
         return res
           .status(409)
           .json({ message: `Already assigned to ${currentAssigned}` });
       }
+
       await pool.query(
         "UPDATE requisitions SET working = TRUE, assignedRecruiter = $1 WHERE requirementId = $2",
         [userName, requirementId]
       );
       return res.status(200).json({ message: "Assigned successfully" });
     } else {
-      if (!currentAssigned || currentAssigned === "") {
-        return res.status(200).json({ message: "Already unassigned" });
-      }
       if (currentAssigned !== userName) {
         return res
           .status(409)
           .json({ message: `Cannot unassign; assigned to ${currentAssigned}` });
       }
+
       await pool.query(
         "UPDATE requisitions SET working = FALSE, assignedRecruiter = '' WHERE requirementId = $1",
         [requirementId]
@@ -127,17 +127,15 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
   }
 });
 
-// -----------------------------
-// PUT update requisition (general fields)
-// -----------------------------
+// PUT update requisition fields
 app.put("/api/requisitions/update/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
-  const { client, title, status, slots } = req.body;
+  const { client, title, status, slots, requirementId: newReqId } = req.body;
 
   try {
     const result = await pool.query(
-      "UPDATE requisitions SET client=$1, title=$2, status=$3, slots=$4 WHERE requirementId=$5 RETURNING *",
-      [client, title, status, slots, requirementId]
+      "UPDATE requisitions SET client=$1, title=$2, status=$3, slots=$4, requirementId=$5 WHERE requirementId=$6 RETURNING *",
+      [client, title, status, slots, newReqId, requirementId]
     );
 
     if (result.rowCount === 0)
@@ -150,26 +148,17 @@ app.put("/api/requisitions/update/:requirementId", async (req, res) => {
   }
 });
 
-// -----------------------------
-// POST add new requisition
-// -----------------------------
-app.post("/api/requisitions", async (req, res) => {
-  const { requirementId, client, title, status, slots } = req.body;
-
-  if (!requirementId || !client || !title || !status) {
-    return res.status(400).json({ message: "Missing required fields" });
-  }
-
+// POST add blank requisition
+app.post("/api/requisitions/new", async (req, res) => {
   try {
     const result = await pool.query(
       `INSERT INTO requisitions
       (requirementId, client, title, status, slots)
       VALUES ($1,$2,$3,$4,$5)
       RETURNING *`,
-      [requirementId, client, title, status, slots || 0]
+      ["", "", "", "Open", 0]
     );
-
-    res.status(201).json({ message: "Added successfully", newRow: result.rows[0] });
+    res.status(201).json({ newRow: result.rows[0] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "DB insert failed" });
@@ -204,12 +193,9 @@ app.post("/api/requisitions/seed", async (req, res) => {
   }
 });
 
-// -----------------------------
 // Serve React frontend
-// -----------------------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 app.use(express.static(path.join(__dirname, "public")));
 
 // Catch-all for React Router
@@ -219,8 +205,8 @@ app.get("*", (req, res) => {
   }
 });
 
-// -----------------------------
 // Start server
-// -----------------------------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Backend + Frontend running on port ${PORT}`));
+app.listen(PORT, () =>
+  console.log(`✅ Backend + Frontend running on port ${PORT}`)
+);

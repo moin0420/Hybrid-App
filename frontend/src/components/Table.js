@@ -9,74 +9,71 @@ function Table({ userName, requisitionsFromDB, onDataUpdate }) {
     title: "",
     status: "",
     slots: "",
-    assignedRecruiter: "",
   });
 
   const [requisitions, setRequisitions] = useState([]);
-  const [newRow, setNewRow] = useState({
-    requirementId: "",
-    client: "",
-    title: "",
-    status: "Open",
-    slots: 0,
-  });
+  const [highlightRows, setHighlightRows] = useState([]); // IDs of recently changed rows
 
-  // Initialize local requisitions state
   useEffect(() => {
     setRequisitions(requisitionsFromDB || []);
   }, [requisitionsFromDB]);
 
   // ---------------------------
-  // Handle working checkbox toggle
+  // Highlight a row temporarily
+  // ---------------------------
+  const flashRow = (id) => {
+    setHighlightRows((prev) => [...prev, id]);
+    setTimeout(() => {
+      setHighlightRows((prev) => prev.filter((rowId) => rowId !== id));
+    }, 2000); // Highlight lasts 2 seconds
+  };
+
+  // ---------------------------
+  // Handle working toggle
   // ---------------------------
   const handleWorkingChange = async (req) => {
-    const updated = !req.working;
     try {
       const res = await fetch(`/api/requisitions/${req.requirementId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ working: updated, userName }),
+        body: JSON.stringify({
+          working: !req.working,
+          userName,
+        }),
       });
-
+      const data = await res.json();
       if (res.ok) {
-        toast.success(updated ? "Assigned successfully" : "Unassigned successfully");
-        const refreshed = await fetch("/api/requisitions").then((r) => r.json());
-        setRequisitions(refreshed);
-        onDataUpdate(refreshed);
+        toast.success(!req.working ? "Assigned successfully" : "Unassigned successfully");
+        flashRow(req.id); // highlight updated row
+        refreshData();
       } else {
-        const errData = await res.json();
-        toast.error(errData.message || "Update failed");
+        toast.error(data.message || "Action failed");
       }
     } catch (err) {
       console.error(err);
-      toast.error("Error updating requisition");
+      toast.error("Error updating working status");
     }
   };
 
   // ---------------------------
-  // Handle inline edit for existing rows
+  // Handle cell edits
   // ---------------------------
   const handleCellEdit = async (req, field, value) => {
+    if (req.assignedRecruiter && req.assignedRecruiter !== userName) return;
+
     try {
       const updatedRow = { ...req, [field]: value };
       const res = await fetch(`/api/requisitions/update/${req.requirementId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client: updatedRow.client,
-          title: updatedRow.title,
-          status: updatedRow.status,
-          slots: updatedRow.slots,
-        }),
+        body: JSON.stringify(updatedRow),
       });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success("Row updated successfully");
-        const refreshed = await fetch("/api/requisitions").then((r) => r.json());
-        setRequisitions(refreshed);
-        onDataUpdate(refreshed);
-      } else {
+      if (!res.ok) {
+        const data = await res.json();
         toast.error(data.message || "Update failed");
+      } else {
+        flashRow(req.id); // highlight updated row
+        refreshData();
       }
     } catch (err) {
       console.error(err);
@@ -85,26 +82,16 @@ function Table({ userName, requisitionsFromDB, onDataUpdate }) {
   };
 
   // ---------------------------
-  // Handle adding new row
+  // Add blank row
   // ---------------------------
   const handleAddRow = async () => {
-    if (!newRow.requirementId || !newRow.client || !newRow.title || !newRow.status) {
-      toast.error("Please fill all required fields");
-      return;
-    }
     try {
-      const res = await fetch("/api/requisitions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newRow),
-      });
+      const res = await fetch("/api/requisitions/new", { method: "POST" });
       const data = await res.json();
       if (res.ok) {
-        toast.success("Row added successfully");
-        const refreshed = await fetch("/api/requisitions").then((r) => r.json());
-        setRequisitions(refreshed);
-        onDataUpdate(refreshed);
-        setNewRow({ requirementId: "", client: "", title: "", status: "Open", slots: 0 });
+        toast.success("New row added");
+        flashRow(data.newRow.id); // highlight new row
+        refreshData();
       } else {
         toast.error(data.message || "Failed to add row");
       }
@@ -115,7 +102,21 @@ function Table({ userName, requisitionsFromDB, onDataUpdate }) {
   };
 
   // ---------------------------
-  // Filter handlers
+  // Refresh requisitions
+  // ---------------------------
+  const refreshData = async () => {
+    try {
+      const res = await fetch("/api/requisitions");
+      const data = await res.json();
+      setRequisitions(data);
+      onDataUpdate(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // ---------------------------
+  // Filter handling
   // ---------------------------
   const handleFilterChange = (field, value) => {
     setFilters({ ...filters, [field]: value });
@@ -128,7 +129,6 @@ function Table({ userName, requisitionsFromDB, onDataUpdate }) {
       title: "",
       status: "",
       slots: "",
-      assignedRecruiter: "",
     });
   };
 
@@ -140,84 +140,102 @@ function Table({ userName, requisitionsFromDB, onDataUpdate }) {
 
   return (
     <div className="table-container">
-      {/* Add Row Form */}
-      <div className="add-row-form">
-        <input
-          type="text"
-          placeholder="Requirement ID"
-          value={newRow.requirementId}
-          onChange={(e) => setNewRow({ ...newRow, requirementId: e.target.value })}
-        />
-        <input
-          type="text"
-          placeholder="Client"
-          value={newRow.client}
-          onChange={(e) => setNewRow({ ...newRow, client: e.target.value })}
-        />
-        <input
-          type="text"
-          placeholder="Title"
-          value={newRow.title}
-          onChange={(e) => setNewRow({ ...newRow, title: e.target.value })}
-        />
-        <select
-          value={newRow.status}
-          onChange={(e) => setNewRow({ ...newRow, status: e.target.value })}
-        >
-          <option value="Open">Open</option>
-          <option value="Closed">Closed</option>
-          <option value="On Hold">On Hold</option>
-          <option value="Cancelled">Cancelled</option>
-          <option value="Filled">Filled</option>
-        </select>
-        <input
-          type="number"
-          placeholder="Slots"
-          value={newRow.slots}
-          onChange={(e) => setNewRow({ ...newRow, slots: Number(e.target.value) })}
-        />
-        <button onClick={handleAddRow}>Add Row</button>
-      </div>
-
+      {/* Filters and Add Row */}
       <div className="table-actions">
         <button className="clear-filters-btn" onClick={clearFilters}>
           Clear All Filters
+        </button>
+        <button className="add-row-btn" onClick={handleAddRow}>
+          Add Row
         </button>
       </div>
 
       <table className="styled-table">
         <thead>
           <tr>
-            <th>Client</th>
-            <th>Requirement ID</th>
-            <th>Title</th>
-            <th>Status</th>
-            <th>Slots</th>
+            <th>
+              Requirement ID <br />
+              <input
+                type="text"
+                value={filters.requirementId}
+                onChange={(e) => handleFilterChange("requirementId", e.target.value)}
+                placeholder="Filter"
+              />
+            </th>
+            <th>
+              Client <br />
+              <input
+                type="text"
+                value={filters.client}
+                onChange={(e) => handleFilterChange("client", e.target.value)}
+                placeholder="Filter"
+              />
+            </th>
+            <th>
+              Title <br />
+              <input
+                type="text"
+                value={filters.title}
+                onChange={(e) => handleFilterChange("title", e.target.value)}
+                placeholder="Filter"
+              />
+            </th>
+            <th>
+              Status <br />
+              <input
+                type="text"
+                value={filters.status}
+                onChange={(e) => handleFilterChange("status", e.target.value)}
+                placeholder="Filter"
+              />
+            </th>
+            <th>
+              Slots <br />
+              <input
+                type="number"
+                value={filters.slots}
+                onChange={(e) => handleFilterChange("slots", e.target.value)}
+                placeholder="Filter"
+              />
+            </th>
             <th>Assigned Recruiter</th>
             <th>Working</th>
           </tr>
         </thead>
         <tbody>
           {filteredData.map((req) => (
-            <tr key={req.requirementId}>
+            <tr
+              key={req.id}
+              className={highlightRows.includes(req.id) ? "row-highlight" : ""}
+            >
+              <td>
+                <input
+                  type="text"
+                  value={req.requirementId}
+                  disabled={req.assignedRecruiter && req.assignedRecruiter !== userName}
+                  onChange={(e) => handleCellEdit(req, "requirementId", e.target.value)}
+                />
+              </td>
               <td>
                 <input
                   type="text"
                   value={req.client}
+                  disabled={req.assignedRecruiter && req.assignedRecruiter !== userName}
                   onChange={(e) => handleCellEdit(req, "client", e.target.value)}
                 />
               </td>
-              <td>{req.requirementId}</td>
               <td>
                 <input
                   type="text"
                   value={req.title}
+                  disabled={req.assignedRecruiter && req.assignedRecruiter !== userName}
                   onChange={(e) => handleCellEdit(req, "title", e.target.value)}
                 />
               </td>
               <td>
                 <select
                   value={req.status}
+                  disabled={req.assignedRecruiter && req.assignedRecruiter !== userName}
                   onChange={(e) => handleCellEdit(req, "status", e.target.value)}
                 >
                   <option value="Open">Open</option>
@@ -231,7 +249,8 @@ function Table({ userName, requisitionsFromDB, onDataUpdate }) {
                 <input
                   type="number"
                   value={req.slots}
-                  onChange={(e) => handleCellEdit(req, "slots", Number(e.target.value))}
+                  disabled={req.assignedRecruiter && req.assignedRecruiter !== userName}
+                  onChange={(e) => handleCellEdit(req, "slots", e.target.value)}
                 />
               </td>
               <td>{req.assignedRecruiter}</td>

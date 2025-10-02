@@ -72,42 +72,24 @@ body {
 /* ---------------------------
    Status Labels
 --------------------------- */
-.status-open {
-  color: #2ecc71;
-  font-weight: 600;
-}
-
-.status-closed {
-  color: #e74c3c;
-  font-weight: 600;
-}
-
-.status-onhold {
-  color: #f1c40f;
-  font-weight: 600;
-}
-
-.status-cancelled {
-  color: #e67e22;
-  font-weight: 600;
-}
-
-.status-filled {
-  color: #3498db;
-  font-weight: 600;
-}
+.status-open { color: #2ecc71; font-weight: 600; }
+.status-closed { color: #e74c3c; font-weight: 600; }
+.status-onhold { color: #f1c40f; font-weight: 600; }
+.status-cancelled { color: #e67e22; font-weight: 600; }
+.status-filled { color: #3498db; font-weight: 600; }
 
 /* ---------------------------
-   Table Actions & Filters
+   Table Actions & Buttons
 --------------------------- */
 .table-actions {
   margin-bottom: 12px;
-  text-align: right;
+  display: flex;
+  gap: 10px;
 }
 
-.clear-filters-btn {
+.clear-filters-btn,
+.add-row-btn {
   padding: 6px 12px;
-  background-color: #e84118;
   color: #fff;
   border: none;
   border-radius: 6px;
@@ -115,56 +97,28 @@ body {
   transition: 0.3s;
 }
 
-.clear-filters-btn:hover {
-  background-color: #c23616;
-}
+.clear-filters-btn { background-color: #e84118; }
+.clear-filters-btn:hover { background-color: #c23616; }
 
-/* ---------------------------
-   Add Row Form
---------------------------- */
-.add-row-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 16px;
-  background-color: #f0f3f5;
-  padding: 12px;
-  border-radius: 10px;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.add-row-form input,
-.add-row-form select {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  flex: 1;
-  min-width: 140px;
-}
-
-.add-row-form button {
-  padding: 8px 16px;
-  background-color: #4caf50;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: 0.3s;
-}
-
-.add-row-form button:hover {
-  background-color: #45a049;
-}
+.add-row-btn { background-color: #4caf50; }
+.add-row-btn:hover { background-color: #45a049; }
 
 /* ---------------------------
    Responsive Adjustments
 --------------------------- */
 @media (max-width: 768px) {
-  .add-row-form {
+  .table-actions {
     flex-direction: column;
   }
+}
 
-  .table-actions {
-    text-align: center;
-  }
+/* Row highlight animation */
+.row-highlight {
+  animation: flashHighlight 2s ease-in-out;
+}
+
+@keyframes flashHighlight {
+  0% { background-color: #ffff99; }
+  50% { background-color: #ffffff; }
+  100% { background-color: #ffffff; }
 }
