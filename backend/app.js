@@ -20,7 +20,7 @@ app.use(bodyParser.json());
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: {
-    rejectUnauthorized: false, // required for Render, Railway, etc.
+    rejectUnauthorized: false,
   },
 });
 
@@ -46,7 +46,6 @@ const initTable = async () => {
     console.error("❌ Failed to initialize table:", err);
   }
 };
-
 initTable();
 
 // -----------------------------
@@ -77,20 +76,14 @@ app.get("/api/requisitions", async (req, res) => {
   }
 });
 
-// POST add new row
+// POST add new row (blank by default)
 app.post("/api/requisitions", async (req, res) => {
-  const { requirementId, client, title, status, slots } = req.body;
-  if (!requirementId || !client || !title) {
-    return res.status(400).json({ message: "requirementId, client, and title are required" });
-  }
-
   try {
+    const defaultRequirementId = `REQ-${Date.now()}`;
     const result = await pool.query(
-      `INSERT INTO requisitions
-        (requirement_id, client, title, status, slots)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING *`,
-      [requirementId, client, title, status || "", slots || 0]
+      `INSERT INTO requisitions (requirement_id, client, title, status, slots)
+       VALUES ($1, '', '', '', 0) RETURNING *`,
+      [defaultRequirementId]
     );
     res.status(201).json(mapRow(result.rows[0]));
   } catch (err) {
@@ -99,13 +92,12 @@ app.post("/api/requisitions", async (req, res) => {
   }
 });
 
-// PUT update row
+// PUT update row or toggle working
 app.put("/api/requisitions/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
   const { client, title, status, slots, working, userName } = req.body;
 
   try {
-    // Fetch existing row
     const result = await pool.query(
       "SELECT * FROM requisitions WHERE requirement_id = $1",
       [requirementId]
@@ -113,7 +105,7 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
     const row = result.rows[0];
     if (!row) return res.status(404).json({ message: "Requirement not found" });
 
-    // Handle working assignment/unassignment
+    // Handle working toggle
     if (typeof working === "boolean" && typeof userName === "string") {
       const currentAssigned = row.assigned_recruiter || "";
       if (working) {
@@ -148,9 +140,9 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
       `UPDATE requisitions SET client=$1, title=$2, status=$3, slots=$4
        WHERE requirement_id=$5 RETURNING *`,
       [
-        client || row.client,
-        title || row.title,
-        status || row.status,
+        client !== undefined ? client : row.client,
+        title !== undefined ? title : row.title,
+        status !== undefined ? status : row.status,
         slots !== undefined ? slots : row.slots,
         requirementId,
       ]
@@ -170,7 +162,6 @@ const __dirname = path.dirname(__filename);
 
 app.use(express.static(path.join(__dirname, "../frontend/build")));
 
-// Catch-all for React Router
 app.get("*", (req, res) => {
   if (!req.path.startsWith("/api")) {
     res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
