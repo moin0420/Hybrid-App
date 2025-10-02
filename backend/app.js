@@ -13,19 +13,13 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// -----------------------------
-// PostgreSQL Pool with SSL
-// -----------------------------
+// PostgreSQL Pool
 const pool = new Pool({
   connectionString: process.env.DB_URL,
-  ssl: {
-    rejectUnauthorized: false, // required for Render, Railway, etc.
-  },
+  ssl: { rejectUnauthorized: false },
 });
 
-// -----------------------------
-// Initialize table safely
-// -----------------------------
+// Initialize table
 const initTable = async () => {
   try {
     await pool.query(`
@@ -40,17 +34,14 @@ const initTable = async () => {
         working BOOLEAN DEFAULT FALSE
       );
     `);
-    console.log("✅ Table initialized successfully");
+    console.log("✅ Table initialized");
   } catch (err) {
-    console.error("❌ Failed to initialize table:", err);
+    console.error("❌ Table init failed", err);
   }
 };
-
 initTable();
 
-// -----------------------------
-// Map row to frontend format
-// -----------------------------
+// Map row
 const mapRow = (row) => ({
   id: row.id,
   client: row.client,
@@ -61,10 +52,6 @@ const mapRow = (row) => ({
   assignedRecruiter: row.assignedrecruiter || "",
   working: row.working,
 });
-
-// -----------------------------
-// API Routes
-// -----------------------------
 
 // GET all requisitions
 app.get("/api/requisitions", async (req, res) => {
@@ -77,7 +64,7 @@ app.get("/api/requisitions", async (req, res) => {
   }
 });
 
-// PUT toggle working (assign/unassign) per user
+// PUT toggle working
 app.put("/api/requisitions/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
   const { working, userName } = req.body;
@@ -86,127 +73,91 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
     return res.status(400).json({ message: "Invalid payload" });
   }
 
+  if (!requirementId) return res.status(400).json({ message: "Requirement ID missing" });
+
   try {
-    const result = await pool.query(
-      "SELECT * FROM requisitions WHERE requirementId = $1",
-      [requirementId]
-    );
-    const row = result.rows[0];
+    const rowRes = await pool.query("SELECT * FROM requisitions WHERE requirementId=$1", [requirementId]);
+    const row = rowRes.rows[0];
     if (!row) return res.status(404).json({ message: "Requirement not found" });
 
     const currentAssigned = row.assignedrecruiter || "";
 
     if (working) {
-      if (currentAssigned && currentAssigned !== userName) {
-        return res
-          .status(409)
-          .json({ message: `Already assigned to ${currentAssigned}` });
-      }
+      if (currentAssigned && currentAssigned !== userName)
+        return res.status(409).json({ message: `Already assigned to ${currentAssigned}` });
 
       await pool.query(
-        "UPDATE requisitions SET working = TRUE, assignedRecruiter = $1 WHERE requirementId = $2",
+        "UPDATE requisitions SET working=TRUE, assignedRecruiter=$1 WHERE requirementId=$2",
         [userName, requirementId]
       );
-      return res.status(200).json({ message: "Assigned successfully" });
     } else {
-      if (currentAssigned !== userName) {
-        return res
-          .status(409)
-          .json({ message: `Cannot unassign; assigned to ${currentAssigned}` });
-      }
+      if (currentAssigned !== userName)
+        return res.status(409).json({ message: `Cannot unassign; assigned to ${currentAssigned}` });
 
       await pool.query(
-        "UPDATE requisitions SET working = FALSE, assignedRecruiter = '' WHERE requirementId = $1",
+        "UPDATE requisitions SET working=FALSE, assignedRecruiter='' WHERE requirementId=$1",
         [requirementId]
       );
-      return res.status(200).json({ message: "Unassigned successfully" });
     }
+
+    const updatedRowRes = await pool.query("SELECT * FROM requisitions WHERE requirementId=$1", [requirementId]);
+    res.json({ message: "Updated successfully", updatedRow: updatedRowRes.rows[0] });
   } catch (err) {
-    console.error(err);
+    console.error("Working toggle error:", err);
     res.status(500).json({ message: "DB error" });
   }
 });
 
-// PUT update requisition fields
+// PUT update any row fields
 app.put("/api/requisitions/update/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
   const { client, title, status, slots, requirementId: newReqId } = req.body;
 
+  if (!requirementId) return res.status(400).json({ message: "Requirement ID missing" });
+
   try {
     const result = await pool.query(
-      "UPDATE requisitions SET client=$1, title=$2, status=$3, slots=$4, requirementId=$5 WHERE requirementId=$6 RETURNING *",
+      `UPDATE requisitions
+       SET client=$1, title=$2, status=$3, slots=$4, requirementId=$5
+       WHERE id = (SELECT id FROM requisitions WHERE requirementId=$6)
+       RETURNING *`,
       [client, title, status, slots, newReqId, requirementId]
     );
 
-    if (result.rowCount === 0)
-      return res.status(404).json({ message: "Requirement not found" });
+    if (result.rowCount === 0) return res.status(404).json({ message: "Row not found" });
 
     res.json({ message: "Updated successfully", updatedRow: result.rows[0] });
   } catch (err) {
-    console.error(err);
+    console.error("Row update error:", err);
     res.status(500).json({ message: "DB update failed" });
   }
 });
 
-// POST add blank requisition
+// POST add blank row
 app.post("/api/requisitions/new", async (req, res) => {
   try {
+    const tempId = `temp_${Date.now()}`;
     const result = await pool.query(
-      `INSERT INTO requisitions
-      (requirementId, client, title, status, slots)
-      VALUES ($1,$2,$3,$4,$5)
-      RETURNING *`,
-      ["", "", "", "Open", 0]
+      `INSERT INTO requisitions (requirementId, client, title, status, slots)
+       VALUES ($1, '', '', 'Open', 0)
+       RETURNING *`,
+      [tempId]
     );
     res.status(201).json({ newRow: result.rows[0] });
   } catch (err) {
-    console.error(err);
+    console.error("Add row error:", err);
     res.status(500).json({ message: "DB insert failed" });
   }
 });
 
-// Optional seed endpoint
-app.post("/api/requisitions/seed", async (req, res) => {
-  const items = req.body.items || [];
-  try {
-    for (const it of items) {
-      await pool.query(
-        `INSERT INTO requisitions
-        (requirementId, client, title, status, slots, assignedRecruiter, working)
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
-        ON CONFLICT (requirementId) DO NOTHING`,
-        [
-          it.requirementId,
-          it.client,
-          it.title,
-          it.status,
-          it.slots || 0,
-          it.assignedRecruiter || "",
-          it.working || false,
-        ]
-      );
-    }
-    res.json({ message: "Seeded" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Seed failed" });
-  }
-});
-
-// Serve React frontend
+// Serve frontend
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, "public")));
-
-// Catch-all for React Router
 app.get("*", (req, res) => {
-  if (!req.path.startsWith("/api")) {
-    res.sendFile(path.join(__dirname, "public", "index.html"));
-  }
+  if (!req.path.startsWith("/api")) res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () =>
-  console.log(`✅ Backend + Frontend running on port ${PORT}`)
-);
+app.listen(PORT, () => console.log(`✅ Backend running on port ${PORT}`));
