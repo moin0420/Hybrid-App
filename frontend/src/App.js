@@ -3,12 +3,16 @@ import Table from "./components/Table";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import "./App.css";
+import { io } from "socket.io-client";
 
 function App() {
   const [userName, setUserName] = useState("");
   const [requisitions, setRequisitions] = useState([]);
+  const [socket, setSocket] = useState(null);
 
-  // Get recruiter name from localStorage or prompt
+  // ---------------------------
+  // Initialize recruiter name
+  // ---------------------------
   useEffect(() => {
     const storedName = localStorage.getItem("recruiterName");
     if (storedName) {
@@ -23,29 +27,64 @@ function App() {
     }
   }, []);
 
-  // Fetch requisitions from backend
+  // ---------------------------
+  // Fetch requisitions initially
+  // ---------------------------
   useEffect(() => {
     const fetchData = async () => {
       try {
         const res = await fetch("/api/requisitions");
         if (!res.ok) throw new Error("Failed to fetch requisitions");
         const data = await res.json();
-        // Ensure correct fields
-        const normalized = data.map((r) => ({
-          client: r.client ?? "",
-          requirementId: r.requirementId ?? r.requirement_id ?? "",
-          title: r.title ?? "",
-          status: r.status ?? "Open",
-          slots: Number.isFinite(r.slots) ? r.slots : Number(r.slots) || 0,
-          assignedRecruiter: r.assignedRecruiter ?? r.assigned_recruiter ?? "",
-          working: Boolean(r.working),
-        }));
-        setRequisitions(normalized);
+        setRequisitions(data);
       } catch (err) {
         console.error(err);
       }
     };
     fetchData();
+  }, []);
+
+  // ---------------------------
+  // Socket.IO Setup
+  // ---------------------------
+  useEffect(() => {
+    const newSocket = io(); // automatically connects to backend origin
+    setSocket(newSocket);
+
+    newSocket.on("connect", () => {
+      console.log("✅ Connected to Socket.IO server:", newSocket.id);
+    });
+
+    // Listen for row updates
+    newSocket.on("rowUpdated", (updatedRow) => {
+      setRequisitions((prev) => {
+        const idx = prev.findIndex(
+          (r) => r.requirementId === updatedRow.requirementId
+        );
+        if (idx >= 0) {
+          const newList = [...prev];
+          newList[idx] = updatedRow;
+          return newList;
+        } else {
+          return [updatedRow, ...prev];
+        }
+      });
+    });
+
+    // Listen for seeding event (refresh everything)
+    newSocket.on("rowsSeeded", async () => {
+      try {
+        const res = await fetch("/api/requisitions");
+        const data = await res.json();
+        setRequisitions(data);
+      } catch (err) {
+        console.error("Failed to refresh after seeding:", err);
+      }
+    });
+
+    return () => {
+      newSocket.disconnect();
+    };
   }, []);
 
   if (!userName) return null;

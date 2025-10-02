@@ -4,8 +4,8 @@ import { Pool } from "pg";
 import bodyParser from "body-parser";
 import cors from "cors";
 import dotenv from "dotenv";
-import path from "path";
-import { fileURLToPath } from "url";
+import { createServer } from "http";
+import { Server } from "socket.io";
 
 dotenv.config();
 
@@ -62,7 +62,7 @@ const mapRow = (row) => ({
 });
 
 // -----------------------------
-// API Routes
+// Routes
 // -----------------------------
 
 // GET all requisitions
@@ -76,14 +76,10 @@ app.get("/api/requisitions", async (req, res) => {
   }
 });
 
-// PUT toggle working
+// PUT toggle working or update row fields
 app.put("/api/requisitions/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
-  const { working, userName } = req.body;
-
-  if (typeof working !== "boolean" || typeof userName !== "string") {
-    return res.status(400).json({ message: "Invalid payload" });
-  }
+  const { working, userName, client, title, status, slots } = req.body;
 
   try {
     const result = await pool.query(
@@ -93,41 +89,62 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
     const row = result.rows[0];
     if (!row) return res.status(404).json({ message: "Requirement not found" });
 
+    // Update row fields if provided
+    await pool.query(
+      `UPDATE requisitions
+       SET client = COALESCE($1, client),
+           title = COALESCE($2, title),
+           status = COALESCE($3, status),
+           slots = COALESCE($4, slots)
+       WHERE requirementId = $5`,
+      [client, title, status, slots, requirementId]
+    );
+
+    // Handle working toggle logic (same as before)
     const currentAssigned = row.assignedrecruiter || "";
 
-    if (working) {
-      if (currentAssigned && currentAssigned !== "") {
-        return res
-          .status(409)
-          .json({ message: `Already assigned to ${currentAssigned}` });
+    if (typeof working === "boolean") {
+      if (working) {
+        if (currentAssigned && currentAssigned !== "") {
+          return res
+            .status(409)
+            .json({ message: `Already assigned to ${currentAssigned}` });
+        }
+        await pool.query(
+          "UPDATE requisitions SET working = TRUE, assignedRecruiter = $1 WHERE requirementId = $2",
+          [userName, requirementId]
+        );
+      } else {
+        if (currentAssigned && currentAssigned !== userName) {
+          return res
+            .status(409)
+            .json({ message: `Cannot unassign; assigned to ${currentAssigned}` });
+        }
+        await pool.query(
+          "UPDATE requisitions SET working = FALSE, assignedRecruiter = '' WHERE requirementId = $1",
+          [requirementId]
+        );
       }
-      await pool.query(
-        "UPDATE requisitions SET working = TRUE, assignedRecruiter = $1 WHERE requirementId = $2",
-        [userName, requirementId]
-      );
-      return res.status(200).json({ message: "Assigned successfully" });
-    } else {
-      if (!currentAssigned || currentAssigned === "") {
-        return res.status(200).json({ message: "Already unassigned" });
-      }
-      if (currentAssigned !== userName) {
-        return res
-          .status(409)
-          .json({ message: `Cannot unassign; assigned to ${currentAssigned}` });
-      }
-      await pool.query(
-        "UPDATE requisitions SET working = FALSE, assignedRecruiter = '' WHERE requirementId = $1",
-        [requirementId]
-      );
-      return res.status(200).json({ message: "Unassigned successfully" });
     }
+
+    const updated = await pool.query(
+      "SELECT * FROM requisitions WHERE requirementId = $1",
+      [requirementId]
+    );
+
+    const mapped = mapRow(updated.rows[0]);
+
+    // 🔥 Broadcast row update via socket.io
+    io.emit("rowUpdated", mapped);
+
+    res.status(200).json(mapped);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "DB error" });
   }
 });
 
-// Optional seed endpoint
+// POST seed endpoint
 app.post("/api/requisitions/seed", async (req, res) => {
   const items = req.body.items || [];
   try {
@@ -148,6 +165,10 @@ app.post("/api/requisitions/seed", async (req, res) => {
         ]
       );
     }
+
+    // 🔥 Notify clients of new rows
+    io.emit("rowsSeeded");
+
     res.json({ message: "Seeded" });
   } catch (err) {
     console.error(err);
@@ -156,28 +177,26 @@ app.post("/api/requisitions/seed", async (req, res) => {
 });
 
 // -----------------------------
-// Serve frontend build
-// -----------------------------
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Serve static files from React frontend
-app.use(express.static(path.join(__dirname, "public")));
-
-// Fallback for React Router / direct paths
-app.get("*", (req, res) => {
-  if (!req.path.startsWith("/api")) {
-    res.sendFile(path.join(__dirname, "public", "index.html"));
-  } else {
-    res.status(404).json({ message: "Not Found" });
-  }
-});
-
-// -----------------------------
-// Start server
+// Start server + Socket.IO
 // -----------------------------
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () =>
-  console.log(`✅ Backend + Frontend running on port ${PORT}`)
+const server = createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "PUT"],
+  },
+});
+
+io.on("connection", (socket) => {
+  console.log("🔌 New client connected:", socket.id);
+
+  socket.on("disconnect", () => {
+    console.log("❌ Client disconnected:", socket.id);
+  });
+});
+
+server.listen(PORT, () =>
+  console.log(`✅ Backend + Socket.IO running on port ${PORT}`)
 );
