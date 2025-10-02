@@ -127,6 +127,55 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
   }
 });
 
+// -----------------------------
+// PUT update requisition (general fields)
+// -----------------------------
+app.put("/api/requisitions/update/:requirementId", async (req, res) => {
+  const { requirementId } = req.params;
+  const { client, title, status, slots } = req.body;
+
+  try {
+    const result = await pool.query(
+      "UPDATE requisitions SET client=$1, title=$2, status=$3, slots=$4 WHERE requirementId=$5 RETURNING *",
+      [client, title, status, slots, requirementId]
+    );
+
+    if (result.rowCount === 0)
+      return res.status(404).json({ message: "Requirement not found" });
+
+    res.json({ message: "Updated successfully", updatedRow: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "DB update failed" });
+  }
+});
+
+// -----------------------------
+// POST add new requisition
+// -----------------------------
+app.post("/api/requisitions", async (req, res) => {
+  const { requirementId, client, title, status, slots } = req.body;
+
+  if (!requirementId || !client || !title || !status) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO requisitions
+      (requirementId, client, title, status, slots)
+      VALUES ($1,$2,$3,$4,$5)
+      RETURNING *`,
+      [requirementId, client, title, status, slots || 0]
+    );
+
+    res.status(201).json({ message: "Added successfully", newRow: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "DB insert failed" });
+  }
+});
+
 // Optional seed endpoint
 app.post("/api/requisitions/seed", async (req, res) => {
   const items = req.body.items || [];

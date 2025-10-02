@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import Table from "./components/Table";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -9,6 +9,7 @@ function App() {
   const [userName, setUserName] = useState("");
   const [requisitions, setRequisitions] = useState([]);
   const [socket, setSocket] = useState(null);
+  const tableEndRef = useRef(null); // Ref to scroll to new rows
 
   // ---------------------------
   // Initialize recruiter name
@@ -87,6 +88,15 @@ function App() {
     };
   }, []);
 
+  // ---------------------------
+  // Scroll to bottom when new row is added
+  // ---------------------------
+  useEffect(() => {
+    if (tableEndRef.current) {
+      tableEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [requisitions]);
+
   if (!userName) return null;
 
   return (
@@ -98,6 +108,9 @@ function App() {
         requisitionsFromDB={requisitions}
         onDataUpdate={(newList) => setRequisitions(newList)}
       />
+
+      {/* Invisible div to scroll to */}
+      <div ref={tableEndRef} />
 
       <ToastContainer position="top-right" autoClose={3000} />
     </div>
