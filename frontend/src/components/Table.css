@@ -1,28 +1,23 @@
 .table-container {
-  margin: 20px auto;
-  width: 95%;
+  margin: 20px;
   overflow-x: auto;
-  font-family: 'Lato', sans-serif;
 }
 
 .table-actions {
-  display: flex;
-  justify-content: flex-end;
   margin-bottom: 10px;
 }
 
-.add-row-btn {
+.table-actions button {
+  margin-right: 10px;
   padding: 6px 12px;
-  font-size: 14px;
-  border-radius: 5px;
-  border: 1px solid #007bff;
+  border: none;
   background-color: #007bff;
   color: white;
+  border-radius: 4px;
   cursor: pointer;
-  transition: background-color 0.2s;
 }
 
-.add-row-btn:hover {
+.table-actions button:hover {
   background-color: #0056b3;
 }
 
@@ -33,41 +28,28 @@
 
 .styled-table th,
 .styled-table td {
-  padding: 8px 12px;
   border: 1px solid #ddd;
-  text-align: left;
+  padding: 8px;
 }
 
 .styled-table th {
   background-color: #f4f4f4;
+  text-align: left;
 }
 
 .styled-table tr:nth-child(even) {
-  background-color: #fafafa;
+  background-color: #f9f9f9;
 }
 
-.styled-table input[type="text"],
-.styled-table input[type="number"],
+.styled-table input,
 .styled-table select {
   width: 100%;
-  padding: 4px 6px;
-  font-size: 14px;
+  padding: 4px;
   box-sizing: border-box;
 }
 
-.styled-table input[disabled],
-.styled-table select[disabled] {
-  background-color: #f0f0f0;
-  color: #888;
-}
-
-.styled-table td:nth-child(6) {
-  font-weight: bold;
-  color: #007bff;
-}
-
-.styled-table input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
+.styled-table td input:disabled,
+.styled-table td select:disabled {
+  background-color: #e9ecef;
+  color: #6c757d;
 }
