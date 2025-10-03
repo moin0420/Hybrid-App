@@ -1,4 +1,3 @@
-// backend/app.js
 import express from "express";
 import pkg from "pg";
 const { Pool } = pkg;
@@ -7,42 +6,27 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import { createServer } from "http";
+import { Server as SocketIO } from "socket.io";
 
 dotenv.config();
 
 const app = express();
+const httpServer = createServer(app);
+const io = new SocketIO(httpServer, {
+  cors: { origin: "*", methods: ["GET", "POST", "PUT"] },
+});
+
 app.use(cors());
 app.use(bodyParser.json());
 
-// -----------------------------
-// Content Security Policy (CSP) headers
-// -----------------------------
-app.use((req, res, next) => {
-  res.setHeader(
-    "Content-Security-Policy",
-    "default-src 'self'; " +
-      "script-src 'self'; " +
-      "style-src 'self' https://fonts.googleapis.com; " +
-      "font-src 'self' https://fonts.gstatic.com; " +
-      "img-src 'self' data:; " +
-      "connect-src 'self';"
-  );
-  next();
-});
-
-// -----------------------------
-// PostgreSQL Pool with SSL
-// -----------------------------
+// PostgreSQL Pool
 const pool = new Pool({
   connectionString: process.env.DB_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl: { rejectUnauthorized: false },
 });
 
-// -----------------------------
-// Initialize table safely
-// -----------------------------
+// Initialize table
 const initTable = async () => {
   try {
     await pool.query(`
@@ -64,12 +48,10 @@ const initTable = async () => {
 };
 initTable();
 
-// -----------------------------
-// Map row to frontend format
-// -----------------------------
+// Map DB row to frontend
 const mapRow = (row) => ({
-  client: row.client,
   requirementId: row.requirement_id,
+  client: row.client,
   title: row.title,
   status: row.status,
   slots: row.slots,
@@ -77,9 +59,11 @@ const mapRow = (row) => ({
   working: row.working,
 });
 
-// -----------------------------
-// API Routes
-// -----------------------------
+// Socket.IO connection
+io.on("connection", (socket) => {
+  console.log("✅ Client connected:", socket.id);
+  socket.on("disconnect", () => console.log("❌ Client disconnected:", socket.id));
+});
 
 // GET all requisitions
 app.get("/api/requisitions", async (req, res) => {
@@ -95,19 +79,19 @@ app.get("/api/requisitions", async (req, res) => {
 // POST add new row
 app.post("/api/requisitions", async (req, res) => {
   const { requirementId, client, title, status, slots } = req.body;
-  if (!requirementId || !client || !title) {
-    return res.status(400).json({ message: "requirementId, client, and title are required" });
-  }
+  if (!requirementId || !client || !title) return res.status(400).json({ message: "requirementId, client, title required" });
 
   try {
     const result = await pool.query(
       `INSERT INTO requisitions
-        (requirement_id, client, title, status, slots)
+       (requirement_id, client, title, status, slots)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
       [requirementId, client, title, status || "", slots || 0]
     );
-    res.status(201).json(mapRow(result.rows[0]));
+    const createdRow = mapRow(result.rows[0]);
+    io.emit("rowAdded", createdRow);
+    res.status(201).json(createdRow);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "DB insert failed" });
@@ -120,45 +104,30 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
   const { client, title, status, slots, working, userName } = req.body;
 
   try {
-    const result = await pool.query(
-      "SELECT * FROM requisitions WHERE requirement_id = $1",
-      [requirementId]
-    );
+    const result = await pool.query("SELECT * FROM requisitions WHERE requirement_id=$1", [requirementId]);
     const row = result.rows[0];
     if (!row) return res.status(404).json({ message: "Requirement not found" });
 
+    // Handle working assignment/unassignment
     if (typeof working === "boolean" && typeof userName === "string") {
       const currentAssigned = row.assigned_recruiter || "";
       if (working) {
-        if (currentAssigned && currentAssigned !== "") {
-          return res.status(409).json({ message: `Already assigned to ${currentAssigned}` });
-        }
-        await pool.query(
-          "UPDATE requisitions SET working = TRUE, assigned_recruiter = $1 WHERE requirement_id = $2",
-          [userName, requirementId]
-        );
+        if (currentAssigned && currentAssigned !== "") return res.status(409).json({ message: `Already assigned to ${currentAssigned}` });
+        await pool.query("UPDATE requisitions SET working=TRUE, assigned_recruiter=$1 WHERE requirement_id=$2", [userName, requirementId]);
       } else {
-        if (!currentAssigned || currentAssigned === "") {
-          return res.status(200).json({ message: "Already unassigned" });
-        }
-        if (currentAssigned !== userName) {
-          return res.status(409).json({ message: `Cannot unassign; assigned to ${currentAssigned}` });
-        }
-        await pool.query(
-          "UPDATE requisitions SET working = FALSE, assigned_recruiter = '' WHERE requirement_id = $1",
-          [requirementId]
-        );
+        if (!currentAssigned || currentAssigned === "") return res.status(200).json({ message: "Already unassigned" });
+        if (currentAssigned !== userName) return res.status(409).json({ message: `Cannot unassign; assigned to ${currentAssigned}` });
+        await pool.query("UPDATE requisitions SET working=FALSE, assigned_recruiter='' WHERE requirement_id=$1", [requirementId]);
       }
-      const updatedRow = await pool.query(
-        "SELECT * FROM requisitions WHERE requirement_id = $1",
-        [requirementId]
-      );
-      return res.json(mapRow(updatedRow.rows[0]));
+      const updatedRow = await pool.query("SELECT * FROM requisitions WHERE requirement_id=$1", [requirementId]);
+      const mappedRow = mapRow(updatedRow.rows[0]);
+      io.emit("rowUpdated", mappedRow);
+      return res.json(mappedRow);
     }
 
+    // Handle regular edits
     const updated = await pool.query(
-      `UPDATE requisitions SET client=$1, title=$2, status=$3, slots=$4
-       WHERE requirement_id=$5 RETURNING *`,
+      `UPDATE requisitions SET client=$1, title=$2, status=$3, slots=$4 WHERE requirement_id=$5 RETURNING *`,
       [
         client || row.client,
         title || row.title,
@@ -167,29 +136,24 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
         requirementId,
       ]
     );
-    res.json(mapRow(updated.rows[0]));
+    const mappedUpdated = mapRow(updated.rows[0]);
+    io.emit("rowUpdated", mappedUpdated);
+    res.json(mappedUpdated);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "DB Update Failed" });
   }
 });
 
-// -----------------------------
 // Serve React frontend
-// -----------------------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 app.use(express.static(path.join(__dirname, "../frontend/build")));
-
 app.get("*", (req, res) => {
-  if (!req.path.startsWith("/api")) {
-    res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
-  }
+  if (!req.path.startsWith("/api")) res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
 });
 
-// -----------------------------
-// Start server
-// -----------------------------
+// Start server with Socket.IO
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Backend + Frontend running on port ${PORT}`));
+httpServer.listen(PORT, () => console.log(`✅ Backend + Frontend running on port ${PORT}`));
