@@ -15,6 +15,22 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // -----------------------------
+// Content Security Policy (CSP) headers
+// -----------------------------
+app.use((req, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; " +
+      "script-src 'self'; " +
+      "style-src 'self' https://fonts.googleapis.com; " +
+      "font-src 'self' https://fonts.gstatic.com; " +
+      "img-src 'self' data:; " +
+      "connect-src 'self';"
+  );
+  next();
+});
+
+// -----------------------------
 // PostgreSQL Pool with SSL
 // -----------------------------
 const pool = new Pool({
@@ -76,14 +92,20 @@ app.get("/api/requisitions", async (req, res) => {
   }
 });
 
-// POST add new row (blank by default)
+// POST add new row
 app.post("/api/requisitions", async (req, res) => {
+  const { requirementId, client, title, status, slots } = req.body;
+  if (!requirementId || !client || !title) {
+    return res.status(400).json({ message: "requirementId, client, and title are required" });
+  }
+
   try {
-    const defaultRequirementId = `REQ-${Date.now()}`;
     const result = await pool.query(
-      `INSERT INTO requisitions (requirement_id, client, title, status, slots)
-       VALUES ($1, '', '', '', 0) RETURNING *`,
-      [defaultRequirementId]
+      `INSERT INTO requisitions
+        (requirement_id, client, title, status, slots)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [requirementId, client, title, status || "", slots || 0]
     );
     res.status(201).json(mapRow(result.rows[0]));
   } catch (err) {
@@ -92,7 +114,7 @@ app.post("/api/requisitions", async (req, res) => {
   }
 });
 
-// PUT update row or toggle working
+// PUT update row
 app.put("/api/requisitions/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
   const { client, title, status, slots, working, userName } = req.body;
@@ -105,7 +127,6 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
     const row = result.rows[0];
     if (!row) return res.status(404).json({ message: "Requirement not found" });
 
-    // Handle working toggle
     if (typeof working === "boolean" && typeof userName === "string") {
       const currentAssigned = row.assigned_recruiter || "";
       if (working) {
@@ -135,14 +156,13 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
       return res.json(mapRow(updatedRow.rows[0]));
     }
 
-    // Handle regular edits
     const updated = await pool.query(
       `UPDATE requisitions SET client=$1, title=$2, status=$3, slots=$4
        WHERE requirement_id=$5 RETURNING *`,
       [
-        client !== undefined ? client : row.client,
-        title !== undefined ? title : row.title,
-        status !== undefined ? status : row.status,
+        client || row.client,
+        title || row.title,
+        status || row.status,
         slots !== undefined ? slots : row.slots,
         requirementId,
       ]
