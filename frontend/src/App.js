@@ -1,53 +1,33 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
 import Table from "./components/Table";
-import { ToastContainer } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
 import "./App.css";
+import { io } from "socket.io-client";
 
 function App() {
-  const [userName, setUserName] = useState("");
-  const [requisitions, setRequisitions] = useState([]);
+  const [currentUser, setCurrentUser] = useState("");
+  const [socket, setSocket] = useState(null);
 
-  // Initialize recruiter name
   useEffect(() => {
-    const storedName = localStorage.getItem("recruiterName");
-    if (storedName) {
-      setUserName(storedName);
-    } else {
-      let name = "";
-      while (!name) {
-        name = prompt("Please enter your name:");
-      }
-      setUserName(name);
+    let name = localStorage.getItem("recruiterName");
+    if (!name) {
+      name = prompt("Enter your name:");
       localStorage.setItem("recruiterName", name);
     }
+    setCurrentUser(name);
   }, []);
-
-  // Fetch requisitions initially
-  const fetchData = async () => {
-    try {
-      const res = await fetch("/api/requisitions");
-      const data = await res.json();
-      setRequisitions(data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   useEffect(() => {
-    fetchData();
+    const s = io();
+    setSocket(s);
+    return () => s.disconnect();
   }, []);
 
+  if (!currentUser) return null;
+
   return (
-    <div className="app-container">
-      <h1>Recruitment Requisitions</h1>
-      <Table
-        userName={userName}
-        requisitionsFromDB={requisitions}
-        onDataUpdate={setRequisitions}
-        refreshData={fetchData}
-      />
-      <ToastContainer position="top-right" autoClose={3000} />
+    <div className="App">
+      <h1>Requirements Tracker</h1>
+      <Table currentUser={currentUser} socket={socket} />
     </div>
   );
 }

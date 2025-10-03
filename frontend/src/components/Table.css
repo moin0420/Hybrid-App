@@ -1,55 +1,6 @@
-.table-container {
-  margin: 20px;
-  overflow-x: auto;
-}
-
-.table-actions {
-  margin-bottom: 10px;
-}
-
-.table-actions button {
-  margin-right: 10px;
-  padding: 6px 12px;
-  border: none;
-  background-color: #007bff;
-  color: white;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.table-actions button:hover {
-  background-color: #0056b3;
-}
-
-.styled-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.styled-table th,
-.styled-table td {
-  border: 1px solid #ddd;
-  padding: 8px;
-}
-
-.styled-table th {
-  background-color: #f4f4f4;
-  text-align: left;
-}
-
-.styled-table tr:nth-child(even) {
-  background-color: #f9f9f9;
-}
-
-.styled-table input,
-.styled-table select {
-  width: 100%;
-  padding: 4px;
-  box-sizing: border-box;
-}
-
-.styled-table td input:disabled,
-.styled-table td select:disabled {
-  background-color: #e9ecef;
-  color: #6c757d;
-}
+.table-container { padding: 20px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+input, select { width: 90%; padding: 4px; }
+.add-btn { margin-bottom: 10px; padding: 6px 12px; cursor: pointer; }
+.non-workable { color: red; font-weight: bold; }

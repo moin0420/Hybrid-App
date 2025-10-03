@@ -1,209 +1,106 @@
 import React, { useState, useEffect } from "react";
-import "../App.css";
 import "./Table.css";
-import { toast } from "react-toastify";
 
-function Table({ userName, requisitionsFromDB, onDataUpdate, refreshData }) {
-  const [requisitions, setRequisitions] = useState([]);
-  const [filters, setFilters] = useState({
-    client: "",
-    requirementId: "",
-    title: "",
-    status: "",
-    slots: "",
-    assignedRecruiter: "",
-  });
+const API_BASE = "/api/requisitions";
+
+function Table({ currentUser, socket }) {
+  const [rows, setRows] = useState([]);
 
   useEffect(() => {
-    setRequisitions(requisitionsFromDB);
-  }, [requisitionsFromDB]);
+    fetch(API_BASE).then(r => r.json()).then(setRows).catch(console.error);
+  }, []);
 
-  const handleFilterChange = (field, value) => {
-    setFilters({ ...filters, [field]: value });
-  };
+  useEffect(() => {
+    if (!socket) return;
+    socket.on("rowUpdated", (row) => setRows(prev => prev.map(r => r.requirementId === row.requirementId ? row : r)));
+    socket.on("rowAdded", (row) => setRows(prev => [row, ...prev]));
+    return () => {
+      socket.off("rowUpdated");
+      socket.off("rowAdded");
+    };
+  }, [socket]);
 
-  const clearFilters = () => {
-    setFilters({
-      client: "",
-      requirementId: "",
-      title: "",
-      status: "",
-      slots: "",
-      assignedRecruiter: "",
-    });
-  };
-
-  const handleEdit = async (req, field, value) => {
-    try {
-      const payload = { ...req, [field]: value };
-      const res = await fetch(`/api/requisitions/${req.requirementId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        toast.error(err.message || "DB Update Failed");
-      } else {
-        await refreshData();
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error("DB Update Failed");
-    }
-  };
-
-  const handleWorkingChange = async (req) => {
-    try {
-      const res = await fetch(`/api/requisitions/${req.requirementId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ working: !req.working, userName }),
-      });
-      const data = await res.json();
-      if (!res.ok) toast.error(data.message || "DB Error");
-      await refreshData();
-    } catch (err) {
-      console.error(err);
-      toast.error("DB Error");
-    }
+  const updateRow = (requirementId, field, value) => {
+    setRows(prev =>
+      prev.map(r => (r.requirementId === requirementId ? { ...r, [field]: value } : r))
+    );
+    fetch(`${API_BASE}/${requirementId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value, userName: currentUser }),
+    }).catch(console.error);
   };
 
   const addRow = async () => {
     try {
-      const res = await fetch("/api/requisitions", { method: "POST" });
-      if (!res.ok) {
-        const err = await res.json();
-        toast.error(err.message || "DB insert failed");
-        return;
-      }
+      const res = await fetch(API_BASE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requirementId: `REQ-${Date.now()}`,
+          client: "",
+          title: "",
+          status: "Open",
+          slots: 0,
+        }),
+      });
       const newRow = await res.json();
-      onDataUpdate([newRow, ...requisitions]);
+      setRows(prev => [newRow, ...prev]);
     } catch (err) {
       console.error(err);
-      toast.error("DB insert failed");
     }
   };
 
-  const filteredData = requisitions.filter((row) =>
-    Object.entries(filters).every(([field, value]) =>
-      value ? String(row[field]).toLowerCase().includes(value.toLowerCase()) : true
-    )
-  );
-
   return (
     <div className="table-container">
-      <div className="table-actions">
-        <button onClick={addRow}>Add Row</button>
-        <button onClick={clearFilters}>Clear Filters</button>
-      </div>
-      <table className="styled-table">
+      <button className="add-btn" onClick={addRow}>➕ Add Row</button>
+      <table>
         <thead>
           <tr>
-            <th>
-              Client
-              <input
-                value={filters.client}
-                onChange={(e) => handleFilterChange("client", e.target.value)}
-              />
-            </th>
-            <th>
-              Requirement ID
-              <input
-                value={filters.requirementId}
-                onChange={(e) => handleFilterChange("requirementId", e.target.value)}
-              />
-            </th>
-            <th>
-              Title
-              <input
-                value={filters.title}
-                onChange={(e) => handleFilterChange("title", e.target.value)}
-              />
-            </th>
-            <th>
-              Status
-              <select
-                value={filters.status}
-                onChange={(e) => handleFilterChange("status", e.target.value)}
-              >
-                <option value="">All</option>
-                <option value="Open">Open</option>
-                <option value="Closed">Closed</option>
-                <option value="On Hold">On Hold</option>
-                <option value="Cancelled">Cancelled</option>
-                <option value="Filled">Filled</option>
-              </select>
-            </th>
-            <th>
-              Slots
-              <input
-                type="number"
-                value={filters.slots}
-                onChange={(e) => handleFilterChange("slots", e.target.value)}
-              />
-            </th>
+            <th>Requirement ID</th>
+            <th>Client</th>
+            <th>Title</th>
+            <th>Status</th>
+            <th>Slots</th>
             <th>Assigned Recruiter</th>
             <th>Working</th>
           </tr>
         </thead>
         <tbody>
-          {filteredData.map((req) => (
-            <tr key={req.requirementId}>
-              <td>
-                <input
-                  disabled={req.working && req.assignedRecruiter !== userName}
-                  value={req.client}
-                  onChange={(e) => handleEdit(req, "client", e.target.value)}
-                />
-              </td>
-              <td>{req.requirementId}</td>
-              <td>
-                <input
-                  disabled={req.working && req.assignedRecruiter !== userName}
-                  value={req.title}
-                  onChange={(e) => handleEdit(req, "title", e.target.value)}
-                />
-              </td>
-              <td>
-                <select
-                  disabled={req.working && req.assignedRecruiter !== userName}
-                  value={req.status}
-                  onChange={(e) => handleEdit(req, "status", e.target.value)}
-                >
-                  <option value="">Select</option>
-                  <option value="Open">Open</option>
-                  <option value="Closed">Closed</option>
-                  <option value="On Hold">On Hold</option>
-                  <option value="Cancelled">Cancelled</option>
-                  <option value="Filled">Filled</option>
-                </select>
-              </td>
-              <td>
-                <input
-                  type="number"
-                  disabled={req.working && req.assignedRecruiter !== userName}
-                  value={req.slots}
-                  onChange={(e) => handleEdit(req, "slots", parseInt(e.target.value))}
-                />
-              </td>
-              <td>{req.assignedRecruiter}</td>
-              <td>
-                <input
-                  type="checkbox"
-                  checked={req.working}
-                  onChange={() => handleWorkingChange(req)}
-                />
-              </td>
-            </tr>
-          ))}
-          {filteredData.length === 0 && (
-            <tr>
-              <td colSpan="7" style={{ textAlign: "center" }}>
-                No requisitions found
-              </td>
-            </tr>
-          )}
+          {rows.map((row) => {
+            const isWorkable = row.status === "Open" && row.slots > 0;
+            const lockedByOther = row.working && row.assignedRecruiter && row.assignedRecruiter !== currentUser;
+            return (
+              <tr key={row.requirementId}>
+                <td>{row.requirementId}</td>
+                <td>
+                  <input value={row.client} disabled={lockedByOther} onChange={(e) => updateRow(row.requirementId, "client", e.target.value)} />
+                </td>
+                <td>
+                  <input value={row.title} disabled={lockedByOther} onChange={(e) => updateRow(row.requirementId, "title", e.target.value)} />
+                </td>
+                <td>
+                  <select value={row.status} disabled={lockedByOther} onChange={(e) => updateRow(row.requirementId, "status", e.target.value)}>
+                    <option value="Open">Open</option>
+                    <option value="Closed">Closed</option>
+                    <option value="On Hold">On Hold</option>
+                  </select>
+                </td>
+                <td>
+                  <input type="number" value={row.slots} disabled={lockedByOther} onChange={(e) => updateRow(row.requirementId, "slots", e.target.value)} />
+                </td>
+                <td>{isWorkable ? row.assignedRecruiter || "" : <span className="non-workable">Non-Workable</span>}</td>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={row.working}
+                    disabled={!isWorkable || lockedByOther}
+                    onChange={() => updateRow(row.requirementId, "working", !row.working)}
+                  />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

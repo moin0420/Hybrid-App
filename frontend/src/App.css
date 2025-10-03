@@ -1,9 +1,53 @@
-.app-container {
-  font-family: Arial, sans-serif;
+.App {
+  font-family: 'Lato', sans-serif;
   padding: 20px;
+  background-color: #f9f9f9;
 }
 
 h1 {
   text-align: center;
   margin-bottom: 20px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: #fff;
+  box-shadow: 0 0 10px rgba(0,0,0,0.05);
+}
+
+th, td {
+  padding: 10px;
+  border: 1px solid #ddd;
+  text-align: center;
+}
+
+th {
+  background-color: #f0f0f0;
+}
+
+input, select {
+  width: 90%;
+  padding: 4px;
+  border-radius: 3px;
+  border: 1px solid #ccc;
+}
+
+.add-btn {
+  margin-bottom: 15px;
+  padding: 8px 16px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.add-btn:hover {
+  background-color: #0056b3;
+}
+
+.non-workable {
+  color: red;
+  font-weight: bold;
 }

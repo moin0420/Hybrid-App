@@ -1,8 +1,7 @@
 {
-  "name": "backend",
+  "name": "recruitment-backend",
   "version": "1.0.0",
   "type": "module",
-  "main": "app.js",
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js"
