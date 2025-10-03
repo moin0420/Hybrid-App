@@ -1,31 +1,42 @@
 import React, { useState, useEffect } from "react";
+import { toast } from "react-toastify";
 import "./Table.css";
 
 const API_BASE = "/api/requisitions";
 
 function Table({ currentUser, socket }) {
   const [rows, setRows] = useState([]);
+  const [draftRows, setDraftRows] = useState({}); // Holds temporary input values
   const [filters, setFilters] = useState({
     requirementId: "",
     client: "",
     title: "",
     status: "",
     slots: "",
-    assignedRecruiter: "",
   });
 
   // Fetch initial rows
   useEffect(() => {
-    fetch(API_BASE).then(r => r.json()).then(setRows).catch(console.error);
+    fetch(API_BASE)
+      .then(r => r.json())
+      .then(setRows)
+      .catch(console.error);
   }, []);
 
-  // Socket updates
+  // Setup socket.io listeners
   useEffect(() => {
     if (!socket) return;
-    socket.on("rowUpdated", row =>
-      setRows(prev => prev.map(r => r.requirementId === row.requirementId ? row : r))
-    );
-    socket.on("rowAdded", row => setRows(prev => [row, ...prev]));
+
+    socket.on("rowUpdated", row => {
+      setRows(prev =>
+        prev.map(r => (r.requirementId === row.requirementId ? row : r))
+      );
+    });
+
+    socket.on("rowAdded", row => {
+      setRows(prev => [row, ...prev]);
+    });
+
     return () => {
       socket.off("rowUpdated");
       socket.off("rowAdded");
@@ -39,20 +50,44 @@ function Table({ currentUser, socket }) {
     )
   );
 
-  const updateRow = (requirementId, field, value) => {
-    // Update local state immediately
-    setRows(prev =>
-      prev.map(r => r.requirementId === requirementId ? { ...r, [field]: value } : r)
-    );
-
-    // Send update to backend
-    fetch(`${API_BASE}/${requirementId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ [field]: value, userName: currentUser }),
-    }).catch(console.error);
+  // Update draft value locally
+  const handleDraftChange = (requirementId, field, value) => {
+    setDraftRows(prev => ({
+      ...prev,
+      [requirementId]: { ...prev[requirementId], [field]: value },
+    }));
   };
 
+  // Commit draft to backend on blur
+  const commitRowUpdate = async (row) => {
+    const draft = draftRows[row.requirementId] || {};
+    if (Object.keys(draft).length === 0) return; // nothing to update
+
+    const updatedRow = { ...row, ...draft };
+
+    try {
+      const res = await fetch(`${API_BASE}/${row.requirementId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedRow),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        toast.error(err.message || "DB Update Failed");
+        return;
+      }
+      const saved = await res.json();
+      setRows(prev =>
+        prev.map(r => (r.requirementId === saved.requirementId ? saved : r))
+      );
+      setDraftRows(prev => ({ ...prev, [row.requirementId]: {} }));
+    } catch (err) {
+      console.error(err);
+      toast.error("DB Update Failed");
+    }
+  };
+
+  // Add a blank row
   const addRow = async () => {
     try {
       const res = await fetch(API_BASE, {
@@ -70,6 +105,38 @@ function Table({ currentUser, socket }) {
       setRows(prev => [newRow, ...prev]);
     } catch (err) {
       console.error(err);
+      toast.error("DB insert failed");
+    }
+  };
+
+  // Handle working checkbox
+  const handleWorkingChange = async (row) => {
+    if (!row.working) {
+      // Check if user already has another working row
+      const alreadyWorking = rows.some(
+        r => r.working && r.assignedRecruiter === currentUser
+      );
+      if (alreadyWorking) {
+        toast.error(
+          "You're already working on another requirement. Please free it to start working on this req."
+        );
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/${row.requirementId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ working: !row.working, userName: currentUser }),
+      });
+      const updatedRow = await res.json();
+      setRows(prev =>
+        prev.map(r => (r.requirementId === updatedRow.requirementId ? updatedRow : r))
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("DB Error");
     }
   };
 
@@ -84,108 +151,63 @@ function Table({ currentUser, socket }) {
       <table>
         <thead>
           <tr>
-            <th>
-              Requirement ID <br />
-              <input
-                placeholder="Filter..."
-                value={filters.requirementId}
-                onChange={e => handleFilterChange("requirementId", e.target.value)}
-              />
-            </th>
-            <th>
-              Client <br />
-              <input
-                placeholder="Filter..."
-                value={filters.client}
-                onChange={e => handleFilterChange("client", e.target.value)}
-              />
-            </th>
-            <th>
-              Title <br />
-              <input
-                placeholder="Filter..."
-                value={filters.title}
-                onChange={e => handleFilterChange("title", e.target.value)}
-              />
-            </th>
-            <th>
-              Status <br />
-              <select
-                value={filters.status}
-                onChange={e => handleFilterChange("status", e.target.value)}
-              >
-                <option value="">All</option>
-                <option value="Open">Open</option>
-                <option value="Closed">Closed</option>
-                <option value="On Hold">On Hold</option>
-              </select>
-            </th>
-            <th>
-              Slots <br />
-              <input
-                type="number"
-                placeholder="Filter..."
-                value={filters.slots}
-                onChange={e => handleFilterChange("slots", e.target.value)}
-              />
-            </th>
+            {["requirementId","client","title","status","slots"].map(col => (
+              <th key={col}>
+                {col.charAt(0).toUpperCase() + col.slice(1)}<br/>
+                <input
+                  placeholder="Filter..."
+                  value={filters[col]}
+                  onChange={e => handleFilterChange(col, e.target.value)}
+                />
+              </th>
+            ))}
             <th>Assigned Recruiter</th>
             <th>Working</th>
           </tr>
         </thead>
         <tbody>
           {filteredRows.map(row => {
+            const draft = draftRows[row.requirementId] || {};
             const isWorkable = row.status === "Open" && row.slots > 0;
-            const lockedByOther = row.working && row.assignedRecruiter && row.assignedRecruiter !== currentUser;
+            const lockedByOther =
+              row.working && row.assignedRecruiter && row.assignedRecruiter !== currentUser;
+
             return (
               <tr key={row.requirementId}>
+                {["requirementId","client","title","status","slots"].map(field => (
+                  <td key={field}>
+                    {field === "status" ? (
+                      <select
+                        value={draft[field] ?? row[field]}
+                        disabled={lockedByOther}
+                        onChange={e => handleDraftChange(row.requirementId, field, e.target.value)}
+                        onBlur={() => commitRowUpdate(row)}
+                      >
+                        <option value="Open">Open</option>
+                        <option value="Closed">Closed</option>
+                        <option value="On Hold">On Hold</option>
+                      </select>
+                    ) : (
+                      <input
+                        value={draft[field] ?? row[field]}
+                        disabled={lockedByOther}
+                        onChange={e => handleDraftChange(row.requirementId, field, e.target.value)}
+                        onBlur={() => commitRowUpdate(row)}
+                      />
+                    )}
+                  </td>
+                ))}
                 <td>
-                  <input
-                    value={row.requirementId}
-                    disabled={lockedByOther}
-                    onChange={e => updateRow(row.requirementId, "requirementId", e.target.value)}
-                  />
+                  {isWorkable
+                    ? row.assignedRecruiter || ""
+                    : <span className="non-workable">Non-Workable</span>}
                 </td>
-                <td>
-                  <input
-                    value={row.client}
-                    disabled={lockedByOther}
-                    onChange={e => updateRow(row.requirementId, "client", e.target.value)}
-                  />
-                </td>
-                <td>
-                  <input
-                    value={row.title}
-                    disabled={lockedByOther}
-                    onChange={e => updateRow(row.requirementId, "title", e.target.value)}
-                  />
-                </td>
-                <td>
-                  <select
-                    value={row.status}
-                    disabled={lockedByOther}
-                    onChange={e => updateRow(row.requirementId, "status", e.target.value)}
-                  >
-                    <option value="Open">Open</option>
-                    <option value="Closed">Closed</option>
-                    <option value="On Hold">On Hold</option>
-                  </select>
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    value={row.slots}
-                    disabled={lockedByOther}
-                    onChange={e => updateRow(row.requirementId, "slots", e.target.value)}
-                  />
-                </td>
-                <td>{isWorkable ? row.assignedRecruiter || "" : <span className="non-workable">Non-Workable</span>}</td>
                 <td>
                   <input
                     type="checkbox"
                     checked={row.working}
                     disabled={!isWorkable || lockedByOther}
-                    onChange={() => updateRow(row.requirementId, "working", !row.working)}
+                    onChange={() => handleWorkingChange(row)}
                   />
                 </td>
               </tr>
