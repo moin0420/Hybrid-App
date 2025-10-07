@@ -97,27 +97,25 @@ app.post("/api/requisitions", async (req, res) => {
 app.put("/api/requisitions/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
   try {
-    const select = await pool.query("SELECT * FROM requisitions WHERE requirement_id = $1", [requirementId]);
+    const select = await pool.query(
+      "SELECT * FROM requisitions WHERE requirement_id = $1",
+      [requirementId]
+    );
     const row = select.rows[0];
-    if (!row) return res.status(404).json({ message: "Requirement not found" });
 
-    // Handle Requirement ID change
-    const { newRequirementId } = req.body;
-    if (newRequirementId && newRequirementId !== requirementId) {
-      try {
-        await pool.query(
-          "UPDATE requisitions SET requirement_id = $1 WHERE requirement_id = $2",
-          [newRequirementId, requirementId]
-        );
-        await broadcastAll();
-        return res.json({ message: "Requirement ID updated" });
-      } catch (err) {
-        console.error(err);
-        return res.status(500).json({ message: "Failed to update Requirement ID (maybe duplicate?)" });
-      }
+    // If row doesn't exist but newRequirementId is sent, try to update it
+    if (!row && req.body.newRequirementId) {
+      const updateNewId = await pool.query(
+        "UPDATE requisitions SET requirement_id=$1 WHERE requirement_id=$2 RETURNING *",
+        [req.body.newRequirementId, requirementId]
+      );
+      await broadcastAll();
+      return res.json(mapRow(updateNewId.rows[0]));
     }
 
-    // Handle working toggle
+    if (!row) return res.status(404).json({ message: "Requirement not found" });
+
+    // Working toggle
     if (Object.prototype.hasOwnProperty.call(req.body, "working")) {
       const { working, userName } = req.body;
       if (typeof working !== "boolean" || typeof userName !== "string") {
@@ -149,8 +147,9 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
       return res.json({ message: "Working status updated" });
     }
 
-    // Handle regular field updates
+    // Regular field updates (client, title, status, slots, requirement_id)
     const updates = {
+      requirement_id: req.body.requirementId || row.requirement_id,
       client: req.body.client !== undefined ? req.body.client : row.client,
       title: req.body.title !== undefined ? req.body.title : row.title,
       status: req.body.status !== undefined ? req.body.status : row.status,
@@ -158,9 +157,10 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
     };
 
     const updated = await pool.query(
-      `UPDATE requisitions SET client=$1, title=$2, status=$3, slots=$4
-       WHERE requirement_id=$5 RETURNING *`,
-      [updates.client, updates.title, updates.status, updates.slots, requirementId]
+      `UPDATE requisitions
+       SET requirement_id=$1, client=$2, title=$3, status=$4, slots=$5
+       WHERE id=$6 RETURNING *`,
+      [updates.requirement_id, updates.client, updates.title, updates.status, updates.slots, row.id]
     );
 
     await broadcastAll();
@@ -185,12 +185,9 @@ app.get("*", (req, res) => {
 io.on("connection", (socket) => {
   console.log("🟢 Socket connected:", socket.id);
 
-  socket.on("editing", (data) => {
-    socket.broadcast.emit("editing", data);
-  });
-
-  socket.on("editing_stopped", (data) => {
-    socket.broadcast.emit("editing_stopped", data);
+  // Handle editing notifications from frontend
+  socket.on("editing_status", ({ requirementId, field, userName, isEditing }) => {
+    io.emit("editing_status", { requirementId, field, userName, isEditing });
   });
 
   socket.on("disconnect", () => {
@@ -199,4 +196,6 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`✅ Backend + Frontend running on port ${PORT}`));
+server.listen(PORT, () =>
+  console.log(`✅ Backend + Frontend running on port ${PORT}`)
+);

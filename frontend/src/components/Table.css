@@ -1,215 +1,192 @@
-/* Container and actions */
+/* ===== Modern SaaS Styling + Tooltips + Row Animations + Auto-expand ===== */
+
+body {
+  font-family: "Inter", sans-serif;
+  background: linear-gradient(135deg, #f8faff, #e8f1ff);
+  margin: 0;
+  padding: 0;
+  color: #1e293b;
+}
+
 .table-container {
-  width: 95%;
-  margin: 20px auto;
-  font-family: Arial, sans-serif;
+  max-width: 1200px;
+  margin: 40px auto;
+  padding: 24px;
+  background: #ffffffcc;
+  backdrop-filter: blur(8px);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: 80vh;
 }
 
 .table-actions {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 10px;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
 .table-actions button {
-  padding: 6px 12px;
-  background-color: #1976d2;
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: all 0.25s ease;
 }
 
 .table-actions button:hover {
-  background-color: #115293;
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #4338ca, #4f46e5);
 }
 
 .table-actions input {
-  padding: 6px;
-  width: 200px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
-  outline: none;
-  transition: border 0.2s ease, box-shadow 0.2s ease;
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  width: 220px;
+  font-size: 14px;
+  transition: all 0.2s ease;
 }
 
 .table-actions input:focus {
-  border-color: #1976d2;
-  box-shadow: 0 0 5px rgba(25, 118, 210, 0.3);
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
-/* Table styling */
 .req-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 12px;
   table-layout: fixed;
 }
 
-.req-table th,
-.req-table td {
-  border: 1px solid #ddd;
-  padding: 8px;
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.req-table thead {
+  position: sticky;
+  top: 0;
+  background: #f1f5f9;
+  z-index: 2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .req-table th {
-  background-color: #f4f4f4;
-  font-weight: bold;
-  position: sticky;
-  top: 0;
-  z-index: 2;
+  text-align: left;
+  padding: 12px 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-/* Alternate row colors */
-.req-table tbody tr:nth-child(even) {
-  background-color: #f9f9f9;
-}
-
-.req-table tbody tr:nth-child(odd) {
-  background-color: #ffffff;
-}
-
-/* Hover effect */
-.req-table tbody tr:hover {
-  background-color: #e3f2fd;
-  transition: background-color 0.2s ease;
-}
-
-/* Input styling */
-.req-table input[type="text"],
-.req-table input[type="number"] {
-  padding: 6px;
-  border-radius: 4px;
-  border: 1px solid #bdbdbd;
-  outline: none;
-  font-size: 0.95rem;
-  min-width: 60px;
-  max-width: 300px;
-  transition: width 0.25s ease, border 0.2s ease, box-shadow 0.2s ease;
-}
-
-.req-table input[type="text"]:focus,
-.req-table input[type="number"]:focus {
-  border-color: #1976d2;
-  box-shadow: 0 0 5px rgba(25, 118, 210, 0.3);
-}
-
-/* Checkbox styling (animated working toggle) */
-.req-table input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  cursor: pointer;
-  transition: transform 0.2s ease;
-}
-
-.req-table input[type="checkbox"]:checked {
-  transform: scale(1.2);
-}
-
-/* Locked rows */
-.locked {
-  background-color: #ffebee !important;
-  color: #b71c1c;
-}
-
-/* Currently working row by current user */
-.working-current {
-  background-color: #e0f7fa !important;
-  font-weight: bold;
-}
-
-/* Currently editing by another user */
-.editing-row {
-  background-color: #fff3e0 !important;
-  font-weight: bold;
-}
-
-/* Assigned recruiter badge */
-.badge {
-  display: inline-block;
-  padding: 2px 6px;
-  border-radius: 12px;
-  background-color: #1976d2;
-  color: white;
-  font-size: 0.75rem;
-  margin-left: 4px;
-}
-
-/* Editing indicator small text */
-small {
-  display: block;
-  color: #d32f2f;
-  font-size: 0.75rem;
-  margin-top: 2px;
-}
-
-/* Status badges */
-.status-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 12px;
-  color: white;
-  font-weight: bold;
-  font-size: 0.8rem;
-}
-
-.status-Open {
-  background-color: #1976d2;
-}
-
-.status-Pending {
-  background-color: #f57c00;
-}
-
-.status-Closed {
-  background-color: #b71c1c;
-}
-
-/* Slots as progress bars */
-.slot-bar {
-  height: 16px;
-  border-radius: 8px;
-  background-color: #ddd;
+.req-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
   position: relative;
-  overflow: hidden;
 }
 
-.slot-fill {
-  height: 100%;
+.req-table tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+.req-table tbody tr:hover {
+  background-color: #eef2ff;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.req-table input[type="text"],
+.req-table input[type="number"],
+.req-table select {
+  min-width: 60px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  background: #f9fafb;
   border-radius: 8px;
-  background-color: #1976d2;
-  transition: width 0.3s ease;
+  font-size: 14px;
+  transition: all 0.2s ease, width 0.15s ease;
+  color: #1e293b;
 }
 
-/* Smooth row transitions */
-.req-table tbody tr {
-  transition: background-color 0.3s ease, color 0.3s ease;
+.req-table input:focus,
+.req-table select:focus {
+  border-color: #6366f1;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  outline: none;
 }
 
-/* Scrollbar styling */
-.table-container::-webkit-scrollbar {
-  height: 8px;
-  width: 8px;
+/* Tooltip above input */
+.input-wrapper {
+  position: relative;
 }
 
-.table-container::-webkit-scrollbar-thumb {
-  background-color: #bdbdbd;
-  border-radius: 4px;
+.editing-indicator {
+  position: absolute;
+  top: -22px;
+  left: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1e293b;
+  padding: 2px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  animation: fadeIn 0.25s forwards;
 }
 
-.table-container::-webkit-scrollbar-thumb:hover {
-  background-color: #999;
+@keyframes fadeIn {
+  to {
+    opacity: 1;
+  }
 }
 
-/* Sticky headers */
-.req-table thead th {
-  background-color: #f4f4f4;
-  top: 0;
-  position: sticky;
-  z-index: 3;
+/* Locked & Working rows */
+.locked {
+  background-color: #fef3c7 !important;
+  opacity: 0.7;
+}
+.working-current {
+  background-color: #dcfce7 !important;
+}
+
+.req-table input[type="checkbox"] {
+  transform: scale(1.2);
+  accent-color: #4f46e5;
+}
+
+/* ===== Row Add/Remove Animations ===== */
+.animated-row {
+  transition: all 0.35s ease;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.animated-row-enter {
+  opacity: 0;
+  transform: translateY(-15px);
+}
+
+.animated-row-exit {
+  opacity: 0;
+  transform: translateY(15px);
+}
+
+@media (max-width: 768px) {
+  .table-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .table-actions button,
+  .table-actions input {
+    width: 100%;
+  }
+  .req-table th,
+  .req-table td {
+    font-size: 13px;
+  }
 }
