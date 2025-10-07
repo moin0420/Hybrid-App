@@ -1,11 +1,9 @@
 .App {
-  padding: 20px;
-  font-family: Arial, sans-serif;
-  max-width: 1200px;
-  margin: auto;
+  text-align: center;
+  padding: 10px;
 }
 
 h1 {
-  text-align: center;
-  color: #333;
+  color: #1976d2;
+  margin-bottom: 20px;
 }

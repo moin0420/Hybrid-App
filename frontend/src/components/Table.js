@@ -1,4 +1,3 @@
-// frontend/src/components/Table.js
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
@@ -10,12 +9,13 @@ function Table({ currentUser }) {
   const [rows, setRows] = useState([]);
   const typingTimersRef = useRef({});
   const [editingUsers, setEditingUsers] = useState({});
+  const maxSlots = 10; // Max slots for progress bar visualization
 
   useEffect(() => {
     fetchRows();
 
     socket.on("requisitions_updated", (data) => {
-      setRows(data);
+      setRows(data.map((r) => ({ ...r, currentId: r.requirementId })));
     });
 
     socket.on("editing", ({ requirementId, field, value, userName }) => {
@@ -46,7 +46,7 @@ function Table({ currentUser }) {
   const fetchRows = async () => {
     try {
       const res = await axios.get("/api/requisitions");
-      setRows(res.data);
+      setRows(res.data.map((r) => ({ ...r, currentId: r.requirementId })));
     } catch (err) {
       console.error(err);
     }
@@ -64,14 +64,25 @@ function Table({ currentUser }) {
 
     typingTimersRef.current[key] = setTimeout(async () => {
       try {
+        const row = rows.find((r) => r.requirementId === requirementId);
+        const urlId = row?.currentId || requirementId;
+
         if (field === "requirementId") {
-          await axios.put(`/api/requisitions/${requirementId}`, { newRequirementId: value });
+          await axios.put(`/api/requisitions/${urlId}`, { newRequirementId: value });
+          setRows((prev) =>
+            prev.map((r) =>
+              r.requirementId === urlId
+                ? { ...r, currentId: value, requirementId: value }
+                : r
+            )
+          );
         } else {
-          await axios.put(`/api/requisitions/${requirementId}`, { [field]: value });
+          await axios.put(`/api/requisitions/${urlId}`, { [field]: value });
         }
+
         socket.emit("editing_stopped", { requirementId });
       } catch (err) {
-        console.error(err);
+        console.error("Update failed:", err);
         alert(err.response?.data?.message || "Update failed");
         fetchRows();
       } finally {
@@ -82,11 +93,15 @@ function Table({ currentUser }) {
 
   const toggleWorking = async (row) => {
     if (row.status !== "Open" || row.slots <= 0) return;
+
     const alreadyWorking = rows.find(
-      (r) => r.working && r.assignedRecruiter === currentUser && r.requirementId !== row.requirementId
+      (r) =>
+        r.working && r.assignedRecruiter === currentUser && r.requirementId !== row.requirementId
     );
     if (!row.working && alreadyWorking) {
-      alert("You're already working on another requirement.");
+      alert(
+        "You're already working on another requirement. Please free it to start working on this req."
+      );
       return;
     }
 
@@ -121,6 +136,11 @@ function Table({ currentUser }) {
   const isLockedByOther = (row) =>
     row.working && row.assignedRecruiter && row.assignedRecruiter !== currentUser;
 
+  const getInputWidth = (value) => {
+    const length = value ? value.length : 1;
+    return `${Math.max(length * 8, 60)}px`;
+  };
+
   return (
     <div className="table-container">
       <div className="table-actions">
@@ -149,57 +169,77 @@ function Table({ currentUser }) {
                 className={
                   locked
                     ? "locked"
+                    : editingUsers[row.requirementId]
+                    ? "editing-row"
                     : row.working && row.assignedRecruiter === currentUser
                     ? "working-current"
                     : ""
                 }
               >
+                {/* Requirement ID */}
                 <td>
                   <input
+                    type="text"
                     value={row.requirementId}
                     disabled={locked}
-                    onChange={(e) => handleFieldChange(row.requirementId, "requirementId", e.target.value)}
+                    style={{ width: getInputWidth(row.requirementId) }}
+                    onChange={(e) =>
+                      handleFieldChange(row.requirementId, "requirementId", e.target.value)
+                    }
                   />
-                  {editingUsers[row.requirementId] && editingUsers[row.requirementId] !== currentUser ? (
-                    <small>Editing by {editingUsers[row.requirementId]}</small>
-                  ) : null}
+                  {editingUsers[row.requirementId] &&
+                    editingUsers[row.requirementId] !== currentUser && (
+                      <small>Editing by {editingUsers[row.requirementId]}</small>
+                    )}
                 </td>
+
+                {/* Client */}
                 <td>
                   <input
+                    type="text"
                     value={row.client ?? ""}
                     disabled={locked}
+                    style={{ width: getInputWidth(row.client) }}
                     onChange={(e) => handleFieldChange(row.requirementId, "client", e.target.value)}
                   />
                 </td>
+
+                {/* Title */}
                 <td>
                   <input
+                    type="text"
                     value={row.title ?? ""}
                     disabled={locked}
+                    style={{ width: getInputWidth(row.title) }}
                     onChange={(e) => handleFieldChange(row.requirementId, "title", e.target.value)}
                   />
                 </td>
+
+                {/* Status */}
                 <td>
-                  <input
-                    value={row.status ?? ""}
-                    disabled={locked}
-                    onChange={(e) => handleFieldChange(row.requirementId, "status", e.target.value)}
-                  />
+                  <span className={`status-badge status-${row.status}`}>
+                    {row.status}
+                  </span>
                 </td>
+
+                {/* Slots as progress bar */}
                 <td>
-                  <input
-                    type="number"
-                    value={row.slots ?? 0}
-                    disabled={locked}
-                    onChange={(e) => handleFieldChange(row.requirementId, "slots", Number(e.target.value))}
-                  />
+                  <div className="slot-bar">
+                    <div
+                      className="slot-fill"
+                      style={{
+                        width: `${Math.min((row.slots / maxSlots) * 100, 100)}%`,
+                      }}
+                    ></div>
+                  </div>
                 </td>
+
+                {/* Assigned Recruiter */}
                 <td>
-                  {row.working
-                    ? row.assignedRecruiter || ""
-                    : row.status !== "Open" || row.slots <= 0
-                    ? "Non-Workable"
-                    : ""}
+                  {row.assignedRecruiter && <span className="badge">{row.assignedRecruiter}</span>}
                 </td>
+
+                {/* Working */}
                 <td>
                   <input
                     type="checkbox"

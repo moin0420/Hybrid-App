@@ -1,3 +1,4 @@
+// backend/app.js
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
@@ -20,6 +21,7 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+// Initialize table safely
 const initTable = async () => {
   try {
     await pool.query(`
@@ -60,6 +62,7 @@ const broadcastAll = async () => {
   io.emit("requisitions_updated", all.rows.map(mapRow));
 };
 
+// GET all requisitions
 app.get("/api/requisitions", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM requisitions ORDER BY id DESC");
@@ -70,6 +73,7 @@ app.get("/api/requisitions", async (req, res) => {
   }
 });
 
+// POST add new row
 app.post("/api/requisitions", async (req, res) => {
   const { requirementId, client, title, status, slots } = req.body;
   try {
@@ -89,6 +93,7 @@ app.post("/api/requisitions", async (req, res) => {
   }
 });
 
+// PUT update row
 app.put("/api/requisitions/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
   try {
@@ -96,6 +101,7 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
     const row = select.rows[0];
     if (!row) return res.status(404).json({ message: "Requirement not found" });
 
+    // Handle Requirement ID change
     const { newRequirementId } = req.body;
     if (newRequirementId && newRequirementId !== requirementId) {
       try {
@@ -107,10 +113,11 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
         return res.json({ message: "Requirement ID updated" });
       } catch (err) {
         console.error(err);
-        return res.status(500).json({ message: "Failed to update Requirement ID" });
+        return res.status(500).json({ message: "Failed to update Requirement ID (maybe duplicate?)" });
       }
     }
 
+    // Handle working toggle
     if (Object.prototype.hasOwnProperty.call(req.body, "working")) {
       const { working, userName } = req.body;
       if (typeof working !== "boolean" || typeof userName !== "string") {
@@ -142,6 +149,7 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
       return res.json({ message: "Working status updated" });
     }
 
+    // Handle regular field updates
     const updates = {
       client: req.body.client !== undefined ? req.body.client : row.client,
       title: req.body.title !== undefined ? req.body.title : row.title,
