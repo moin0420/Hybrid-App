@@ -30,20 +30,27 @@ function Table({ currentUser }) {
   };
 
   const handleFieldChange = (requirementId, field, value) => {
+    const oldReqId = requirementId;
+
     setRows((prev) =>
-      prev.map((r) => (r.requirementId === requirementId ? { ...r, [field]: value } : r))
+      prev.map((r) => (r.requirementId === oldReqId ? { ...r, [field]: value } : r))
     );
 
     setLocalEdits((prev) => ({
       ...prev,
-      [requirementId]: { ...(prev[requirementId] || {}), [field]: value },
+      [oldReqId]: { ...(prev[oldReqId] || {}), [field]: value },
     }));
 
-    const key = `${requirementId}::${field}`;
+    const key = `${oldReqId}::${field}`;
     if (typingTimersRef.current[key]) clearTimeout(typingTimersRef.current[key]);
     typingTimersRef.current[key] = setTimeout(async () => {
       try {
-        await axios.put(`/api/requisitions/${requirementId}`, { [field]: value });
+        if (field === "requirementId") {
+          // Send old and new requirement ID
+          await axios.put(`/api/requisitions/${oldReqId}`, { newRequirementId: value });
+        } else {
+          await axios.put(`/api/requisitions/${oldReqId}`, { [field]: value });
+        }
       } catch (err) {
         console.error("Update failed:", err);
         alert(err.response?.data?.message || "Update failed");
@@ -124,7 +131,12 @@ function Table({ currentUser }) {
                 className={locked ? "locked" : row.working && row.assignedRecruiter === currentUser ? "working-current" : ""}
               >
                 <td>
-                  <input type="text" value={row.requirementId} disabled />
+                  <input
+                    type="text"
+                    value={row.requirementId}
+                    disabled={locked}
+                    onChange={(e) => handleFieldChange(row.requirementId, "requirementId", e.target.value)}
+                  />
                 </td>
                 <td>
                   <input

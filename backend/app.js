@@ -101,6 +101,23 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
     const row = select.rows[0];
     if (!row) return res.status(404).json({ message: "Requirement not found" });
 
+    // Handle Requirement ID change
+    const { newRequirementId } = req.body;
+    if (newRequirementId && newRequirementId !== requirementId) {
+      try {
+        await pool.query(
+          "UPDATE requisitions SET requirement_id = $1 WHERE requirement_id = $2",
+          [newRequirementId, requirementId]
+        );
+        await broadcastAll();
+        return res.json({ message: "Requirement ID updated" });
+      } catch (err) {
+        console.error(err);
+        return res.status(500).json({ message: "Failed to update Requirement ID" });
+      }
+    }
+
+    // Handle working toggle
     if (Object.prototype.hasOwnProperty.call(req.body, "working")) {
       const { working, userName } = req.body;
       if (typeof working !== "boolean" || typeof userName !== "string") {
