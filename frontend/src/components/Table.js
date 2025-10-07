@@ -9,15 +9,38 @@ const socket = io("/");
 function Table({ currentUser }) {
   const [rows, setRows] = useState([]);
   const typingTimersRef = useRef({});
-  const [localEdits, setLocalEdits] = useState({});
+  const [editingUsers, setEditingUsers] = useState({});
 
   useEffect(() => {
     fetchRows();
+
     socket.on("requisitions_updated", (data) => {
       setRows(data);
-      setLocalEdits({});
     });
-    return () => socket.off("requisitions_updated");
+
+    socket.on("editing", ({ requirementId, field, value, userName }) => {
+      if (userName === currentUser) return;
+      setRows((prev) =>
+        prev.map((r) =>
+          r.requirementId === requirementId ? { ...r, [field]: value } : r
+        )
+      );
+      setEditingUsers((prev) => ({ ...prev, [requirementId]: userName }));
+    });
+
+    socket.on("editing_stopped", ({ requirementId }) => {
+      setEditingUsers((prev) => {
+        const copy = { ...prev };
+        delete copy[requirementId];
+        return copy;
+      });
+    });
+
+    return () => {
+      socket.off("requisitions_updated");
+      socket.off("editing");
+      socket.off("editing_stopped");
+    };
   }, []);
 
   const fetchRows = async () => {
@@ -30,29 +53,25 @@ function Table({ currentUser }) {
   };
 
   const handleFieldChange = (requirementId, field, value) => {
-    const oldReqId = requirementId;
-
     setRows((prev) =>
-      prev.map((r) => (r.requirementId === oldReqId ? { ...r, [field]: value } : r))
+      prev.map((r) => (r.requirementId === requirementId ? { ...r, [field]: value } : r))
     );
 
-    setLocalEdits((prev) => ({
-      ...prev,
-      [oldReqId]: { ...(prev[oldReqId] || {}), [field]: value },
-    }));
+    socket.emit("editing", { requirementId, field, value, userName: currentUser });
 
-    const key = `${oldReqId}::${field}`;
+    const key = `${requirementId}::${field}`;
     if (typingTimersRef.current[key]) clearTimeout(typingTimersRef.current[key]);
+
     typingTimersRef.current[key] = setTimeout(async () => {
       try {
         if (field === "requirementId") {
-          // Send old and new requirement ID
-          await axios.put(`/api/requisitions/${oldReqId}`, { newRequirementId: value });
+          await axios.put(`/api/requisitions/${requirementId}`, { newRequirementId: value });
         } else {
-          await axios.put(`/api/requisitions/${oldReqId}`, { [field]: value });
+          await axios.put(`/api/requisitions/${requirementId}`, { [field]: value });
         }
+        socket.emit("editing_stopped", { requirementId });
       } catch (err) {
-        console.error("Update failed:", err);
+        console.error(err);
         alert(err.response?.data?.message || "Update failed");
         fetchRows();
       } finally {
@@ -63,12 +82,11 @@ function Table({ currentUser }) {
 
   const toggleWorking = async (row) => {
     if (row.status !== "Open" || row.slots <= 0) return;
-
     const alreadyWorking = rows.find(
       (r) => r.working && r.assignedRecruiter === currentUser && r.requirementId !== row.requirementId
     );
     if (!row.working && alreadyWorking) {
-      alert("You're already working on another requirement. Please free it to start working on this req.");
+      alert("You're already working on another requirement.");
       return;
     }
 
@@ -124,19 +142,27 @@ function Table({ currentUser }) {
         </thead>
         <tbody>
           {rows.map((row) => {
-            const locked = isLockedByOther(row);
+            const locked = isLockedByOther(row) || editingUsers[row.requirementId];
             return (
               <tr
-                key={row.requirementId}
-                className={locked ? "locked" : row.working && row.assignedRecruiter === currentUser ? "working-current" : ""}
+                key={row.id}
+                className={
+                  locked
+                    ? "locked"
+                    : row.working && row.assignedRecruiter === currentUser
+                    ? "working-current"
+                    : ""
+                }
               >
                 <td>
                   <input
-                    type="text"
                     value={row.requirementId}
                     disabled={locked}
                     onChange={(e) => handleFieldChange(row.requirementId, "requirementId", e.target.value)}
                   />
+                  {editingUsers[row.requirementId] && editingUsers[row.requirementId] !== currentUser ? (
+                    <small>Editing by {editingUsers[row.requirementId]}</small>
+                  ) : null}
                 </td>
                 <td>
                   <input
@@ -168,7 +194,11 @@ function Table({ currentUser }) {
                   />
                 </td>
                 <td>
-                  {row.working ? row.assignedRecruiter || "" : (row.status !== "Open" || row.slots <= 0 ? "Non-Workable" : "")}
+                  {row.working
+                    ? row.assignedRecruiter || ""
+                    : row.status !== "Open" || row.slots <= 0
+                    ? "Non-Workable"
+                    : ""}
                 </td>
                 <td>
                   <input
