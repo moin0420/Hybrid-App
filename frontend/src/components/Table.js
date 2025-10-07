@@ -1,165 +1,105 @@
-import React, { useState, useEffect } from "react";
-import io from "socket.io-client";
+import React, { useEffect, useState } from "react";
 import axios from "axios";
+import io from "socket.io-client";
 import "./Table.css";
 
-const socket = io("http://localhost:5000");
+const socket = io.connect("/");
 
-const Table = ({ currentUser = "Recruiter A" }) => {
-  const [requirements, setRequirements] = useState([]);
-  const [filter, setFilter] = useState("");
-  const [editingRow, setEditingRow] = useState(null);
-  const [editingUsers, setEditingUsers] = useState({});
+const Table = () => {
+  const [rows, setRows] = useState([]);
+  const [localEdit, setLocalEdit] = useState({});
+  const [editingCell, setEditingCell] = useState(null);
 
   useEffect(() => {
     fetchData();
 
-    socket.on("rowUpdated", (updated) => {
-      setRequirements((prev) =>
-        prev.map((r) => (r.id === updated.id ? updated : r))
+    socket.on("requisitionUpdated", ({ id, column, value }) => {
+      setRows((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, [column]: value } : r))
       );
     });
 
-    socket.on("fieldUpdated", (data) => {
-      setRequirements((prev) =>
-        prev.map((r) =>
-          r.id === data.id ? { ...r, [data.field]: data.value } : r
-        )
-      );
-    });
-
-    socket.on("editingStart", ({ id, user }) => {
-      setEditingUsers((prev) => ({ ...prev, [id]: user }));
-    });
-
-    socket.on("editingStop", ({ id }) => {
-      setEditingUsers((prev) => {
-        const updated = { ...prev };
-        delete updated[id];
-        return updated;
-      });
-    });
+    socket.on("editingCell", (data) => setEditingCell(data));
+    socket.on("editingStopped", () => setEditingCell(null));
 
     return () => {
-      socket.off("rowUpdated");
-      socket.off("fieldUpdated");
-      socket.off("editingStart");
-      socket.off("editingStop");
+      socket.off("requisitionUpdated");
+      socket.off("editingCell");
+      socket.off("editingStopped");
     };
   }, []);
 
   const fetchData = async () => {
-    const res = await axios.get("/api/requirements");
-    setRequirements(res.data);
+    try {
+      const res = await axios.get("/api/requisitions");
+      setRows(res.data);
+    } catch (err) {
+      console.error("Error fetching data:", err);
+    }
   };
 
-  const handleEdit = (id, field, value) => {
-    socket.emit("editField", { id, field, value, user: currentUser });
+  const handleChange = (id, column, value) => {
+    setLocalEdit((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], [column]: value },
+    }));
   };
 
-  const handleFocus = (id) => {
-    setEditingRow(id);
-    socket.emit("editingStart", { id, user: currentUser });
+  const handleBlur = async (id, column) => {
+    const value = localEdit[id]?.[column];
+    if (value === undefined) return;
+
+    try {
+      await axios.put(`/api/requisitions/${id}`, { column, value });
+      socket.emit("requisitionUpdated", { id, column, value });
+    } catch (err) {
+      console.error("Error updating:", err);
+    }
+    socket.emit("stopEditing");
   };
 
-  const handleBlur = (id) => {
-    setEditingRow(null);
-    socket.emit("editingStop", { id });
-  };
-
-  const handleWorkingToggle = (req) => {
-    const recruiter = req.working ? "" : currentUser;
-    const working = !req.working;
-    socket.emit("toggleWorking", { id: req.id, recruiter, working });
+  const handleFocus = (id, column) => {
+    socket.emit("startEditing", { id, column });
+    setEditingCell({ id, column });
   };
 
   return (
     <div className="table-container">
-      <input
-        type="text"
-        className="filter-input"
-        placeholder="Filter..."
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-      />
-
+      <h2>Live Requisitions</h2>
       <table className="req-table">
         <thead>
           <tr>
             <th>ID</th>
             <th>Client</th>
-            <th>Role</th>
+            <th>Title</th>
             <th>Status</th>
             <th>Slots</th>
-            <th>Working</th>
-            <th>Assigned Recruiter</th>
+            <th>Recruiter</th>
           </tr>
         </thead>
         <tbody>
-          {requirements
-            .filter((r) =>
-              Object.values(r)
-                .join(" ")
-                .toLowerCase()
-                .includes(filter.toLowerCase())
-            )
-            .map((req) => {
-              const isBeingEdited = editingUsers[req.id];
-              const isEditingSelf = editingRow === req.id;
-
-              return (
-                <tr
-                  key={req.id}
+          {rows.map((r) => (
+            <tr key={r.id}>
+              {["id", "client", "title", "status", "slots", "assigned_recruiter"].map((col) => (
+                <td
+                  key={col}
                   className={
-                    isEditingSelf
-                      ? "editing-self"
-                      : isBeingEdited
-                      ? "editing-other"
+                    editingCell?.id === r.id && editingCell?.column === col
+                      ? "editing"
                       : ""
                   }
                 >
-                  <td>{req.id}</td>
-                  <td>
-                    <input
-                      value={req.client || ""}
-                      onChange={(e) =>
-                        handleEdit(req.id, "client", e.target.value)
-                      }
-                      onFocus={() => handleFocus(req.id)}
-                      onBlur={() => handleBlur(req.id)}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      value={req.role || ""}
-                      onChange={(e) =>
-                        handleEdit(req.id, "role", e.target.value)
-                      }
-                      onFocus={() => handleFocus(req.id)}
-                      onBlur={() => handleBlur(req.id)}
-                    />
-                  </td>
-                  <td>{req.status}</td>
-                  <td>{req.slots}</td>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={req.working}
-                      onChange={() => handleWorkingToggle(req)}
-                      disabled={
-                        (req.status !== "Open" || req.slots <= 0) &&
-                        !req.working
-                      }
-                    />
-                  </td>
-                  <td>
-                    {isBeingEdited
-                      ? `Editing by ${isBeingEdited}`
-                      : req.assigned_recruiter || "Non-Workable"}
-                  </td>
-                </tr>
-              );
-            })}
+                  <input
+                    type="text"
+                    value={localEdit[r.id]?.[col] ?? r[col] ?? ""}
+                    onChange={(e) => handleChange(r.id, col, e.target.value)}
+                    onBlur={() => handleBlur(r.id, col)}
+                    onFocus={() => handleFocus(r.id, col)}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

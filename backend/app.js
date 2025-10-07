@@ -1,99 +1,89 @@
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
+import path from "path";
+import { fileURLToPath } from "url";
 import cors from "cors";
-import pg from "pg";
 import dotenv from "dotenv";
+import pkg from "pg";
 
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+
+// Create Socket.IO instance
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "PUT"],
+  },
 });
 
 app.use(cors());
 app.use(express.json());
 
-const { Pool } = pg;
+// PostgreSQL connection
+const { Pool } = pkg;
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-const PORT = process.env.PORT || 5000;
-
-// --- REST API ---
-app.get("/api/requirements", async (req, res) => {
+// --------------------- API ROUTES --------------------- //
+app.get("/api/requisitions", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM requirements ORDER BY id ASC");
+    const result = await pool.query("SELECT * FROM requisitions ORDER BY id ASC");
     res.json(result.rows);
   } catch (err) {
-    console.error("DB Fetch Error:", err);
-    res.status(500).json({ error: "Database fetch failed" });
+    console.error("❌ DB fetch error:", err);
+    res.status(500).json({ message: "DB error" });
   }
 });
 
-app.put("/api/requirements/:id", async (req, res) => {
+app.put("/api/requisitions/:id", async (req, res) => {
   const { id } = req.params;
-  const { field, value } = req.body;
+  const { column, value } = req.body;
+
   try {
-    const result = await pool.query(
-      `UPDATE requirements SET ${field} = $1 WHERE id = $2 RETURNING *`,
-      [value, id]
-    );
-    if (result.rows.length > 0) {
-      const updated = result.rows[0];
-      io.emit("rowUpdated", updated);
-      res.json(updated);
-    } else {
-      res.status(404).json({ error: "Not found" });
-    }
+    await pool.query(`UPDATE requisitions SET ${column} = $1 WHERE id = $2`, [value, id]);
+
+    // Notify all clients of change
+    io.emit("requisitionUpdated", { id, column, value });
+    res.json({ message: "Updated successfully" });
   } catch (err) {
-    console.error("DB Update Error:", err);
-    res.status(500).json({ error: "Database update failed" });
+    console.error("❌ DB update error:", err);
+    res.status(500).json({ message: "DB update failed" });
   }
 });
 
-// --- SOCKET.IO REALTIME LOGIC ---
+// --------------------- SOCKET HANDLERS --------------------- //
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("🟢 User connected:", socket.id);
 
-  socket.on("editField", async (data) => {
-    const { id, field, value, user } = data;
-    try {
-      await pool.query(`UPDATE requirements SET ${field} = $1 WHERE id = $2`, [value, id]);
-      io.emit("fieldUpdated", data);
-    } catch (err) {
-      console.error("Edit Error:", err);
-    }
+  socket.on("startEditing", (data) => {
+    socket.broadcast.emit("editingCell", data);
   });
 
-  socket.on("toggleWorking", async (data) => {
-    const { id, recruiter, working } = data;
-    try {
-      const result = await pool.query(
-        "UPDATE requirements SET assigned_recruiter = $1, working = $2 WHERE id = $3 RETURNING *",
-        [recruiter, working, id]
-      );
-      io.emit("rowUpdated", result.rows[0]);
-    } catch (err) {
-      console.error("Toggle Error:", err);
-    }
-  });
-
-  socket.on("editingStart", (data) => {
-    io.emit("editingStart", data); // broadcast to all
-  });
-
-  socket.on("editingStop", (data) => {
-    io.emit("editingStop", data); // broadcast to all
+  socket.on("stopEditing", () => {
+    socket.broadcast.emit("editingStopped");
   });
 
   socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
+    console.log("🔴 User disconnected:", socket.id);
   });
 });
 
-server.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+// --------------------- FRONTEND SERVE --------------------- //
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use(express.static(path.join(__dirname, "../frontend/build")));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "../frontend/build", "index.html"));
+});
+
+// --------------------- START SERVER --------------------- //
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
