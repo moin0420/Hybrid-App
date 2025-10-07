@@ -6,7 +6,6 @@ import "./Table.css";
 
 const socket = io("/");
 
-// Keep a color map for users
 const userColors = {};
 const generateColor = (userName) => {
   if (!userColors[userName]) {
@@ -190,8 +189,10 @@ function Table({ currentUser }) {
                           }
                         >
                           <option value="Open">Open</option>
-                          <option value="Pending">Pending</option>
+                          <option value="On Hold">On Hold</option>
                           <option value="Closed">Closed</option>
+                          <option value="Cancelled">Cancelled</option>
+                          <option value="Filled">Filled</option>
                         </select>
                       ) : (
                         <div className="input-wrapper">
@@ -199,13 +200,28 @@ function Table({ currentUser }) {
                             type={field === "slots" ? "number" : "text"}
                             value={value}
                             disabled={locked}
-                            onChange={(e) =>
-                              handleFieldChange(
-                                row.requirementId,
-                                field,
-                                field === "slots" ? Number(e.target.value) : e.target.value
-                              )
-                            }
+                            onChange={(e) => {
+                              if (field === "slots") {
+                                const newValue = Number(e.target.value);
+                                if (
+                                  row.working &&
+                                  row.assignedRecruiter === currentUser &&
+                                  newValue === 0
+                                ) {
+                                  alert(
+                                    "Cannot set Slots to 0 while you are working on this requirement."
+                                  );
+                                  return;
+                                }
+                                handleFieldChange(row.requirementId, field, newValue);
+                              } else {
+                                handleFieldChange(
+                                  row.requirementId,
+                                  field,
+                                  e.target.value
+                                );
+                              }
+                            }}
                             style={
                               field === "requirementId" ||
                               field === "client" ||
