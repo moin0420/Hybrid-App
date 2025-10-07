@@ -1,105 +1,126 @@
 import React, { useEffect, useState } from "react";
-import axios from "axios";
-import io from "socket.io-client";
+import { io } from "socket.io-client";
 import "./Table.css";
 
-const socket = io.connect("/");
+const socket = io("/"); // or full URL if deployed
+
+const userName = "User_" + Math.floor(Math.random() * 1000);
 
 const Table = () => {
   const [rows, setRows] = useState([]);
-  const [localEdit, setLocalEdit] = useState({});
-  const [editingCell, setEditingCell] = useState(null);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
-    fetchData();
-
-    socket.on("requisitionUpdated", ({ id, column, value }) => {
-      setRows((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, [column]: value } : r))
-      );
-    });
-
-    socket.on("editingCell", (data) => setEditingCell(data));
-    socket.on("editingStopped", () => setEditingCell(null));
-
+    // Initial fetch
+    socket.emit("requestRows");
+    // Listen for updates
+    socket.on("updateRows", (data) => setRows(data));
+    socket.on("errorMsg", (msg) => alert(msg));
     return () => {
-      socket.off("requisitionUpdated");
-      socket.off("editingCell");
-      socket.off("editingStopped");
+      socket.off("updateRows");
+      socket.off("errorMsg");
     };
   }, []);
 
-  const fetchData = async () => {
-    try {
-      const res = await axios.get("/api/requisitions");
-      setRows(res.data);
-    } catch (err) {
-      console.error("Error fetching data:", err);
-    }
+  const addRow = () => socket.emit("addRow");
+
+  const updateField = (row, field, value) => {
+    const updatedRow = { ...row, [field]: value, userName };
+    socket.emit("editRow", updatedRow);
   };
 
-  const handleChange = (id, column, value) => {
-    setLocalEdit((prev) => ({
-      ...prev,
-      [id]: { ...prev[id], [column]: value },
-    }));
+  const handleWorkingChange = (row) => {
+    socket.emit("editRow", { ...row, working: !row.working, userName });
   };
 
-  const handleBlur = async (id, column) => {
-    const value = localEdit[id]?.[column];
-    if (value === undefined) return;
-
-    try {
-      await axios.put(`/api/requisitions/${id}`, { column, value });
-      socket.emit("requisitionUpdated", { id, column, value });
-    } catch (err) {
-      console.error("Error updating:", err);
-    }
-    socket.emit("stopEditing");
-  };
-
-  const handleFocus = (id, column) => {
-    socket.emit("startEditing", { id, column });
-    setEditingCell({ id, column });
-  };
+  const isLocked = (row) => row.working && row.assignedRecruiter !== userName;
 
   return (
     <div className="table-container">
-      <h2>Live Requisitions</h2>
-      <table className="req-table">
+      <div className="table-actions">
+        <button onClick={addRow}>Add Row</button>
+        <input
+          placeholder="Filter..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+      </div>
+      <table>
         <thead>
           <tr>
-            <th>ID</th>
+            <th>Requirement ID</th>
             <th>Client</th>
             <th>Title</th>
             <th>Status</th>
             <th>Slots</th>
-            <th>Recruiter</th>
+            <th>Assigned Recruiter</th>
+            <th>Working</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.id}>
-              {["id", "client", "title", "status", "slots", "assigned_recruiter"].map((col) => (
-                <td
-                  key={col}
-                  className={
-                    editingCell?.id === r.id && editingCell?.column === col
-                      ? "editing"
-                      : ""
-                  }
-                >
+          {rows
+            .filter((r) =>
+              r.client.toLowerCase().includes(filter.toLowerCase()) ||
+              r.title.toLowerCase().includes(filter.toLowerCase()) ||
+              r.requirementId.toLowerCase().includes(filter.toLowerCase())
+            )
+            .map((row) => (
+              <tr key={row.requirementId} className={isLocked(row) ? "locked" : ""}>
+                <td>
                   <input
-                    type="text"
-                    value={localEdit[r.id]?.[col] ?? r[col] ?? ""}
-                    onChange={(e) => handleChange(r.id, col, e.target.value)}
-                    onBlur={() => handleBlur(r.id, col)}
-                    onFocus={() => handleFocus(r.id, col)}
+                    value={row.requirementId}
+                    disabled={row.requirementId && row.requirementId !== ""}
                   />
                 </td>
-              ))}
-            </tr>
-          ))}
+                <td>
+                  <input
+                    value={row.client}
+                    disabled={isLocked(row)}
+                    onChange={(e) => updateField(row, "client", e.target.value)}
+                  />
+                </td>
+                <td>
+                  <input
+                    value={row.title}
+                    disabled={isLocked(row)}
+                    onChange={(e) => updateField(row, "title", e.target.value)}
+                  />
+                </td>
+                <td>
+                  <input
+                    value={row.status}
+                    disabled={isLocked(row)}
+                    onChange={(e) => updateField(row, "status", e.target.value)}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    value={row.slots}
+                    disabled={isLocked(row)}
+                    onChange={(e) => updateField(row, "slots", Number(e.target.value))}
+                  />
+                </td>
+                <td>
+                  <input
+                    value={row.working ? row.assignedRecruiter : ""}
+                    disabled
+                  />
+                </td>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={row.working && row.assignedRecruiter === userName}
+                    disabled={
+                      row.status !== "Open" ||
+                      row.slots <= 0 ||
+                      (row.working && row.assignedRecruiter !== userName)
+                    }
+                    onChange={() => handleWorkingChange(row)}
+                  />
+                </td>
+              </tr>
+            ))}
         </tbody>
       </table>
     </div>

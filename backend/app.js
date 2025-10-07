@@ -1,89 +1,130 @@
 import express from "express";
-import http from "http";
 import { Server } from "socket.io";
-import path from "path";
-import { fileURLToPath } from "url";
+import http from "http";
+import pkg from "pg";
+const { Pool } = pkg;
+import bodyParser from "body-parser";
 import cors from "cors";
 import dotenv from "dotenv";
-import pkg from "pg";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
 const app = express();
-const server = http.createServer(app);
-
-// Create Socket.IO instance
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST", "PUT"],
-  },
-});
-
 app.use(cors());
-app.use(express.json());
+app.use(bodyParser.json());
 
-// PostgreSQL connection
-const { Pool } = pkg;
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// --------------------- API ROUTES --------------------- //
-app.get("/api/requisitions", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM requisitions ORDER BY id ASC");
-    res.json(result.rows);
-  } catch (err) {
-    console.error("❌ DB fetch error:", err);
-    res.status(500).json({ message: "DB error" });
-  }
+// Initialize table
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS requisitions (
+    id SERIAL PRIMARY KEY,
+    requirement_id TEXT UNIQUE,
+    client TEXT,
+    title TEXT,
+    status TEXT,
+    slots INTEGER DEFAULT 0,
+    assigned_recruiter TEXT DEFAULT '',
+    working BOOLEAN DEFAULT FALSE
+  );
+`);
+
+// Map row for frontend
+const mapRow = (row) => ({
+  client: row.client,
+  requirementId: row.requirement_id,
+  title: row.title,
+  status: row.status,
+  slots: row.slots,
+  assignedRecruiter: row.assigned_recruiter || "",
+  working: row.working,
 });
 
-app.put("/api/requisitions/:id", async (req, res) => {
-  const { id } = req.params;
-  const { column, value } = req.body;
-
-  try {
-    await pool.query(`UPDATE requisitions SET ${column} = $1 WHERE id = $2`, [value, id]);
-
-    // Notify all clients of change
-    io.emit("requisitionUpdated", { id, column, value });
-    res.json({ message: "Updated successfully" });
-  } catch (err) {
-    console.error("❌ DB update error:", err);
-    res.status(500).json({ message: "DB update failed" });
-  }
+// HTTP server
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: "*" },
 });
 
-// --------------------- SOCKET HANDLERS --------------------- //
+// -----------------
+// Socket.io events
+// -----------------
 io.on("connection", (socket) => {
-  console.log("🟢 User connected:", socket.id);
+  console.log("⚡ Client connected:", socket.id);
 
-  socket.on("startEditing", (data) => {
-    socket.broadcast.emit("editingCell", data);
+  socket.on("editRow", async (row) => {
+    try {
+      const { requirementId, client, title, status, slots, working, userName } = row;
+      const dbRow = await pool.query("SELECT * FROM requisitions WHERE requirement_id=$1", [requirementId]);
+      if (!dbRow.rows[0]) return;
+
+      // Handle working checkbox logic
+      if (typeof working === "boolean" && userName) {
+        const currentAssigned = dbRow.rows[0].assigned_recruiter || "";
+        if (working) {
+          if (currentAssigned && currentAssigned !== "") {
+            socket.emit("errorMsg", `Already assigned to ${currentAssigned}`);
+            return;
+          }
+          await pool.query(
+            "UPDATE requisitions SET working=TRUE, assigned_recruiter=$1 WHERE requirement_id=$2",
+            [userName, requirementId]
+          );
+        } else {
+          if (currentAssigned !== userName) {
+            socket.emit("errorMsg", `Cannot unassign; assigned to ${currentAssigned}`);
+            return;
+          }
+          await pool.query(
+            "UPDATE requisitions SET working=FALSE, assigned_recruiter='' WHERE requirement_id=$1",
+            [requirementId]
+          );
+        }
+      } else {
+        await pool.query(
+          `UPDATE requisitions SET client=$1, title=$2, status=$3, slots=$4 WHERE requirement_id=$5`,
+          [client, title, status, slots, requirementId]
+        );
+      }
+
+      // Broadcast updated table to all clients
+      const allRows = await pool.query("SELECT * FROM requisitions ORDER BY id DESC");
+      io.emit("updateRows", allRows.rows.map(mapRow));
+    } catch (err) {
+      console.error(err);
+    }
   });
 
-  socket.on("stopEditing", () => {
-    socket.broadcast.emit("editingStopped");
-  });
-
-  socket.on("disconnect", () => {
-    console.log("🔴 User disconnected:", socket.id);
+  socket.on("addRow", async () => {
+    try {
+      const newRequirementId = "REQ_" + Date.now();
+      await pool.query(
+        `INSERT INTO requisitions (requirement_id, client, title, status, slots) VALUES ($1,'','','Open',1)`,
+        [newRequirementId]
+      );
+      const allRows = await pool.query("SELECT * FROM requisitions ORDER BY id DESC");
+      io.emit("updateRows", allRows.rows.map(mapRow));
+    } catch (err) {
+      console.error(err);
+    }
   });
 });
 
-// --------------------- FRONTEND SERVE --------------------- //
+// Serve frontend
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 app.use(express.static(path.join(__dirname, "../frontend/build")));
-
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/build", "index.html"));
+  if (!req.path.startsWith("/api")) {
+    res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
+  }
 });
 
-// --------------------- START SERVER --------------------- //
+// Start server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+server.listen(PORT, () => console.log(`✅ Backend + Frontend + Socket.io running on port ${PORT}`));
