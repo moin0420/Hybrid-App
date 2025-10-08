@@ -17,17 +17,20 @@ const generateColor = (userName) => {
 function Table({ currentUser }) {
   const [rows, setRows] = useState([]);
   const [editing, setEditing] = useState({});
-  const typingTimersRef = useRef({});
+  const [localEdits, setLocalEdits] = useState({});
   const [reqIdEdits, setReqIdEdits] = useState({});
-  const [filters, setFilters] = useState({ requirementId: "", client: "", title: "", status: "" });
+  const [filters, setFilters] = useState({
+    requirementId: "",
+    client: "",
+    title: "",
+    status: "",
+  });
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
 
   useEffect(() => {
     fetchRows();
 
-    socket.on("requisitions_updated", (data) => {
-      setRows(data);
-    });
+    socket.on("requisitions_updated", (data) => setRows(data));
 
     socket.on("editing_status", ({ requirementId, field, userName, isEditing }) => {
       setEditing((prev) => ({
@@ -55,41 +58,57 @@ function Table({ currentUser }) {
     socket.emit("editing_status", { requirementId, field, userName: currentUser, isEditing });
   };
 
+  // Update local state immediately while typing
   const handleFieldChange = (requirementId, field, value) => {
     if (field === "requirementId") return;
-    setRows((prev) =>
-      prev.map((r) => (r.requirementId === requirementId ? { ...r, [field]: value } : r))
+
+    setRows(prev =>
+      prev.map(r => (r.requirementId === requirementId ? { ...r, [field]: value } : r))
     );
+
+    setLocalEdits(prev => ({
+      ...prev,
+      [requirementId]: { ...(prev[requirementId] || {}), [field]: value },
+    }));
+
     broadcastEditing(requirementId, field, true);
-    const key = `${requirementId}::${field}`;
-    if (typingTimersRef.current[key]) clearTimeout(typingTimersRef.current[key]);
-    typingTimersRef.current[key] = setTimeout(async () => {
-      try {
-        await axios.put(`/api/requisitions/${requirementId}`, { [field]: value });
-        broadcastEditing(requirementId, field, false);
-      } catch (err) {
-        console.error("Update failed:", err);
-        alert(err.response?.data?.message || "Update failed");
-        fetchRows();
-        broadcastEditing(requirementId, field, false);
-      } finally {
-        delete typingTimersRef.current[key];
-      }
-    }, 800);
+  };
+
+  // Save to backend only on blur
+  const saveFieldOnBlur = async (requirementId, field, value) => {
+    broadcastEditing(requirementId, field, false);
+    try {
+      await axios.put(`/api/requisitions/${requirementId}`, { [field]: value });
+      setLocalEdits(prev => {
+        const copy = { ...prev };
+        if (copy[requirementId]) delete copy[requirementId][field];
+        return copy;
+      });
+    } catch (err) {
+      alert(err.response?.data?.message || "Update failed");
+      fetchRows();
+    }
   };
 
   const toggleWorking = async (row) => {
+    if (row.status !== "Open" || row.slots <= 0) return;
+
     const assignedUsers = row.assigned_recruiters || [];
     const isAlreadyAssigned = assignedUsers.includes(currentUser);
 
-    const userWorkingElsewhere = rows.some(
-      (r) =>
-        r.requirementId !== row.requirementId &&
-        (r.assigned_recruiters || []).includes(currentUser)
+    // Check if user is already working on another requirement
+    const userWorkingElsewhere = rows.some(r =>
+      r.requirementId !== row.requirementId && r.assigned_recruiters?.includes(currentUser)
     );
+    if (!isAlreadyAssigned && userWorkingElsewhere) {
+      alert("You can only work on one requirement at a time.");
+      return;
+    }
 
-    if (!isAlreadyAssigned && userWorkingElsewhere) return;
-    if (!isAlreadyAssigned && assignedUsers.length >= 2) return;
+    if (!isAlreadyAssigned && assignedUsers.length >= 2) {
+      alert("Maximum 2 users already working on this requirement.");
+      return;
+    }
 
     try {
       await axios.put(`/api/requisitions/${row.requirementId}`, {
@@ -114,34 +133,25 @@ function Table({ currentUser }) {
         slots: 1,
       });
     } catch (err) {
-      console.error(err);
       alert(err.response?.data?.message || "Add row failed");
     }
   };
 
   const isLockedByOther = (row) => {
     const assignedUsers = row.assigned_recruiters || [];
-    const userWorkingElsewhere = rows.some(
-      (r) =>
-        r.requirementId !== row.requirementId &&
-        (r.assigned_recruiters || []).includes(currentUser)
-    );
-    return (
-      (assignedUsers.length >= 2 && !assignedUsers.includes(currentUser)) ||
-      (!assignedUsers.includes(currentUser) && userWorkingElsewhere)
-    );
+    return assignedUsers.length >= 2 && !assignedUsers.includes(currentUser);
   };
 
   const handleSort = (key) => {
-    setSortConfig((prev) => ({
+    setSortConfig(prev => ({
       key,
       direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
     }));
   };
 
-  const filteredRows = rows.filter((row) =>
+  const filteredRows = rows.filter(row =>
     Object.entries(filters).every(([key, val]) =>
-      row[key].toString().toLowerCase().includes(val.toLowerCase())
+      row[key]?.toString().toLowerCase().includes(val.toLowerCase())
     )
   );
 
@@ -149,9 +159,7 @@ function Table({ currentUser }) {
     if (!sortConfig.key) return 0;
     const aVal = a[sortConfig.key]?.toString().toLowerCase() || "";
     const bVal = b[sortConfig.key]?.toString().toLowerCase() || "";
-    if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
-    if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
-    return 0;
+    return sortConfig.direction === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
   });
 
   return (
@@ -159,6 +167,7 @@ function Table({ currentUser }) {
       <div className="table-actions">
         <button onClick={addRow}>Add Row</button>
       </div>
+
       <table className="req-table">
         <thead>
           <tr>
@@ -176,10 +185,10 @@ function Table({ currentUser }) {
             {["requirementId", "client", "title", "status"].map((key) => (
               <th key={key}>
                 <input
-                  placeholder={`Filter...`}
+                  placeholder={`Filter ${key}`}
                   value={filters[key]}
                   onChange={(e) =>
-                    setFilters((prev) => ({ ...prev, [key]: e.target.value }))
+                    setFilters(prev => ({ ...prev, [key]: e.target.value }))
                   }
                 />
               </th>
@@ -189,6 +198,7 @@ function Table({ currentUser }) {
             <th></th>
           </tr>
         </thead>
+
         <tbody>
           {sortedRows.map((row) => {
             const locked = isLockedByOther(row);
@@ -207,12 +217,9 @@ function Table({ currentUser }) {
                 }`}
               >
                 {["requirementId", "client", "title", "status", "slots"].map((field) => {
-                  const value =
-                    field === "status"
-                      ? row.status ?? "Open"
-                      : field === "slots"
-                      ? row.slots ?? 0
-                      : row[field] ?? "";
+                  const editingUser = editing[`${row.requirementId}::${field}`];
+                  const isEditing = editingUser && editingUser !== currentUser;
+                  const value = field === "slots" ? row.slots ?? 0 : row[field] ?? "";
 
                   if (field === "requirementId") {
                     return (
@@ -223,7 +230,7 @@ function Table({ currentUser }) {
                             value={reqIdEdits[row.requirementId] ?? value}
                             disabled={locked}
                             onChange={(e) =>
-                              setReqIdEdits((prev) => ({
+                              setReqIdEdits(prev => ({
                                 ...prev,
                                 [row.requirementId]: e.target.value,
                               }))
@@ -232,11 +239,8 @@ function Table({ currentUser }) {
                               const newValue = reqIdEdits[row.requirementId];
                               if (newValue && newValue !== row.requirementId) {
                                 try {
-                                  await axios.put(
-                                    `/api/requisitions/${row.requirementId}`,
-                                    { newRequirementId: newValue }
-                                  );
-                                  setReqIdEdits((prev) => {
+                                  await axios.put(`/api/requisitions/${row.requirementId}`, { newRequirementId: newValue });
+                                  setReqIdEdits(prev => {
                                     const copy = { ...prev };
                                     delete copy[row.requirementId];
                                     return copy;
@@ -249,6 +253,11 @@ function Table({ currentUser }) {
                             }}
                             style={{ width: `${Math.max(value.length, 4)}ch` }}
                           />
+                          {isEditing && (
+                            <span className="editing-indicator" style={{ backgroundColor: generateColor(editingUser) }}>
+                              Editing by {editingUser}
+                            </span>
+                          )}
                         </div>
                       </td>
                     );
@@ -260,9 +269,8 @@ function Table({ currentUser }) {
                         <select
                           value={value}
                           disabled={locked}
-                          onChange={(e) =>
-                            handleFieldChange(row.requirementId, field, e.target.value)
-                          }
+                          onChange={(e) => handleFieldChange(row.requirementId, field, e.target.value)}
+                          onBlur={(e) => saveFieldOnBlur(row.requirementId, field, e.target.value)}
                         >
                           <option value="Open">Open</option>
                           <option value="On Hold">On Hold</option>
@@ -271,18 +279,21 @@ function Table({ currentUser }) {
                           <option value="Filled">Filled</option>
                         </select>
                       ) : (
-                        <input
-                          type={field === "slots" ? "number" : "text"}
-                          value={value}
-                          disabled={locked}
-                          onChange={(e) =>
-                            handleFieldChange(
-                              row.requirementId,
-                              field,
-                              field === "slots" ? Number(e.target.value) : e.target.value
-                            )
-                          }
-                        />
+                        <div className="input-wrapper">
+                          <input
+                            type={field === "slots" ? "number" : "text"}
+                            value={value}
+                            disabled={locked}
+                            onChange={(e) => handleFieldChange(row.requirementId, field, e.target.value)}
+                            onBlur={(e) => saveFieldOnBlur(row.requirementId, field, e.target.value)}
+                            style={{ width: `${Math.max(value.toString().length, 4)}ch` }}
+                          />
+                          {isEditing && (
+                            <span className="editing-indicator" style={{ backgroundColor: generateColor(editingUser) }}>
+                              Editing by {editingUser}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
                   );
