@@ -93,7 +93,7 @@ app.post("/api/requisitions", async (req, res) => {
        RETURNING *`,
       [requirementId, client || "", title || "", status || "Open", slots || 0]
     );
-    await broadcastDebounced(); // broadcast after small delay
+    await broadcastDebounced();
     if (result.rows[0]) return res.status(201).json(mapRow(result.rows[0]));
     return res.status(409).json({ message: "RequirementId conflict or not inserted" });
   } catch (err) {
@@ -105,34 +105,42 @@ app.post("/api/requisitions", async (req, res) => {
 // PUT update row
 app.put("/api/requisitions/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
+  const { client, title, status, slots, working, userName, newRequirementId } = req.body;
+
   try {
     const select = await pool.query("SELECT * FROM requisitions WHERE requirement_id = $1", [requirementId]);
     const row = select.rows[0];
 
-    // Case: requirementId being changed (rename)
-    if (!row && req.body.newRequirementId) {
-      const updateNewId = await pool.query(
-        "UPDATE requisitions SET requirement_id=$1 WHERE requirement_id=$2 RETURNING *",
-        [req.body.newRequirementId, requirementId]
-      );
-      await broadcastDebounced();
-      return res.json(mapRow(updateNewId.rows[0]));
-    }
-
     if (!row) return res.status(404).json({ message: "Requirement not found" });
 
-    // Working toggle
-    if (Object.prototype.hasOwnProperty.call(req.body, "working")) {
-      const { working, userName } = req.body;
-      if (typeof working !== "boolean" || typeof userName !== "string") {
-        return res.status(400).json({ message: "Invalid payload for working toggle" });
+    // Case: requirementId being renamed
+    if (newRequirementId) {
+      if (newRequirementId === requirementId) {
+        return res.status(400).json({ message: "New requirementId is same as current" });
       }
+      try {
+        const updateNewId = await pool.query(
+          "UPDATE requisitions SET requirement_id=$1 WHERE requirement_id=$2 RETURNING *",
+          [newRequirementId, requirementId]
+        );
+        await broadcastDebounced();
+        return res.json(mapRow(updateNewId.rows[0]));
+      } catch (err) {
+        if (err.code === "23505") {
+          return res.status(409).json({ message: "RequirementId already exists" });
+        }
+        throw err;
+      }
+    }
 
+    // Working toggle
+    if (typeof working === "boolean") {
       const currentAssigned = row.assigned_recruiter || "";
       if (working) {
         if (currentAssigned && currentAssigned !== "") {
           return res.status(409).json({ message: `Already assigned to ${currentAssigned}` });
         }
+        if (!userName) return res.status(400).json({ message: "userName required to assign" });
         await pool.query(
           "UPDATE requisitions SET working = TRUE, assigned_recruiter = $1 WHERE requirement_id = $2",
           [userName, requirementId]
@@ -153,23 +161,21 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
       return res.json({ message: "Working status updated" });
     }
 
-    // Normal edits (client, title, status, slots, requirement_id)
+    // Normal edits (client, title, status, slots)
     const updates = {
-      requirement_id: req.body.requirementId || row.requirement_id,
-      client: req.body.client !== undefined ? req.body.client : row.client,
-      title: req.body.title !== undefined ? req.body.title : row.title,
-      status: req.body.status !== undefined ? req.body.status : row.status,
-      slots: req.body.slots !== undefined ? req.body.slots : row.slots,
+      client: client !== undefined ? client : row.client,
+      title: title !== undefined ? title : row.title,
+      status: status !== undefined ? status : row.status,
+      slots: slots !== undefined ? slots : row.slots,
     };
 
     const updated = await pool.query(
       `UPDATE requisitions
-       SET requirement_id=$1, client=$2, title=$3, status=$4, slots=$5
-       WHERE id=$6 RETURNING *`,
-      [updates.requirement_id, updates.client, updates.title, updates.status, updates.slots, row.id]
+       SET client=$1, title=$2, status=$3, slots=$4
+       WHERE requirement_id=$5 RETURNING *`,
+      [updates.client, updates.title, updates.status, updates.slots, requirementId]
     );
 
-    // Debounced broadcast prevents instant refocus loss
     await broadcastDebounced();
     return res.json(mapRow(updated.rows[0]));
   } catch (err) {

@@ -19,6 +19,7 @@ function Table({ currentUser }) {
   const [editing, setEditing] = useState({});
   const typingTimersRef = useRef({});
   const [localEdits, setLocalEdits] = useState({});
+  const [reqIdEdits, setReqIdEdits] = useState({}); // <-- Local state for requirementId edits
   const [filters, setFilters] = useState({
     requirementId: "",
     client: "",
@@ -61,6 +62,8 @@ function Table({ currentUser }) {
   };
 
   const handleFieldChange = (requirementId, field, value) => {
+    if (field === "requirementId") return; // Skip requirementId here, handled separately
+
     setRows((prev) =>
       prev.map((r) => (r.requirementId === requirementId ? { ...r, [field]: value } : r))
     );
@@ -77,11 +80,7 @@ function Table({ currentUser }) {
 
     typingTimersRef.current[key] = setTimeout(async () => {
       try {
-        if (field === "requirementId") {
-          await axios.put(`/api/requisitions/${requirementId}`, { newRequirementId: value });
-        } else {
-          await axios.put(`/api/requisitions/${requirementId}`, { [field]: value });
-        }
+        await axios.put(`/api/requisitions/${requirementId}`, { [field]: value });
         broadcastEditing(requirementId, field, false);
       } catch (err) {
         console.error("Update failed:", err);
@@ -226,6 +225,56 @@ function Table({ currentUser }) {
                       ? row.slots ?? 0
                       : row[field] ?? "";
 
+                  // ----------- Updated requirementId input -------------
+                  if (field === "requirementId") {
+                    return (
+                      <td key={field}>
+                        <div className="input-wrapper">
+                          <input
+                            type="text"
+                            value={reqIdEdits[row.requirementId] ?? value}
+                            disabled={locked}
+                            onChange={(e) =>
+                              setReqIdEdits((prev) => ({
+                                ...prev,
+                                [row.requirementId]: e.target.value,
+                              }))
+                            }
+                            onBlur={async () => {
+                              const newValue = reqIdEdits[row.requirementId];
+                              if (newValue && newValue !== row.requirementId) {
+                                try {
+                                  await axios.put(
+                                    `/api/requisitions/${row.requirementId}`,
+                                    { newRequirementId: newValue }
+                                  );
+                                  setReqIdEdits((prev) => {
+                                    const copy = { ...prev };
+                                    delete copy[row.requirementId];
+                                    return copy;
+                                  });
+                                } catch (err) {
+                                  alert(err.response?.data?.message || "Update failed");
+                                  fetchRows();
+                                }
+                              }
+                            }}
+                            style={{ width: `${Math.max(value.length, 4)}ch` }}
+                          />
+                          {isEditing && (
+                            <span
+                              className="editing-indicator"
+                              style={{ backgroundColor: generateColor(editingUser) }}
+                            >
+                              Editing by {editingUser}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  }
+
+                  // ----------- Other fields (existing logic) -------------
                   return (
                     <td key={field}>
                       {field === "status" ? (
@@ -263,17 +312,11 @@ function Table({ currentUser }) {
                                 }
                                 handleFieldChange(row.requirementId, field, newValue);
                               } else {
-                                handleFieldChange(
-                                  row.requirementId,
-                                  field,
-                                  e.target.value
-                                );
+                                handleFieldChange(row.requirementId, field, e.target.value);
                               }
                             }}
                             style={
-                              field === "requirementId" ||
-                              field === "client" ||
-                              field === "title"
+                              field === "client" || field === "title"
                                 ? { width: `${Math.max(value.length, 4)}ch` }
                                 : {}
                             }
