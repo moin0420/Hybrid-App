@@ -1,3 +1,5 @@
+/* ===== Modern SaaS Styling + Tooltips + Row Animations + Auto-expand ===== */
+
 body {
   font-family: "Inter", sans-serif;
   background: linear-gradient(135deg, #f8faff, #e8f1ff);
@@ -57,22 +59,13 @@ body {
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
+/* Keep table layout fixed to avoid overlap; colgroup widths used in JS */
 .req-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   border-radius: 12px;
   table-layout: fixed;
-}
-
-.req-table th, .req-table td {
-  text-align: left;
-  padding: 12px 8px;
-  font-size: 14px;
-  vertical-align: middle;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .req-table thead {
@@ -84,12 +77,24 @@ body {
 }
 
 .req-table th {
+  text-align: left;
+  padding: 12px 10px;
+  font-size: 14px;
   font-weight: 600;
   color: #334155;
   border-bottom: 1px solid #e2e8f0;
+  position: relative;
   cursor: pointer;
   user-select: none;
-  position: relative;
+}
+
+.req-table th input {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
 }
 
 .req-table th.sorted-asc::after,
@@ -102,57 +107,114 @@ body {
   transform: translateY(-50%);
 }
 
-.req-table th.sorted-asc::after { border-bottom-color: #4f46e5; }
-.req-table th.sorted-desc::after { border-top-color: #4f46e5; }
-
-.req-table tbody tr:nth-child(even) { background-color: #f8fafc; }
-.req-table tbody tr:hover { background-color: #eef2ff; transition: background-color 0.2s ease-in-out; }
-
-.req-table input[type="text"], .req-table input[type="number"], .req-table select {
-  width: 100%;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  font-size: 14px;
-  background: #f9fafb;
-  box-sizing: border-box;
+.req-table th.sorted-asc::after {
+  border-bottom-color: #4f46e5;
 }
 
-.req-table input:focus, .req-table select:focus {
+.req-table th.sorted-desc::after {
+  border-top-color: #4f46e5;
+}
+
+.req-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+  position: relative;
+}
+
+.req-table tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+
+.req-table tbody tr:hover {
+  background-color: #eef2ff;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.req-table input[type="text"],
+.req-table input[type="number"],
+.req-table select {
+  min-width: 60px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  background: #f9fafb;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.2s ease, width 0.15s ease;
+  color: #1e293b;
+}
+
+.req-table input:focus,
+.req-table select:focus {
   border-color: #6366f1;
   background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
   outline: none;
 }
 
-.input-wrapper { position: relative; }
+/* Tooltip above input */
+.input-wrapper {
+  position: relative;
+}
+
+/* Editing indicator (when someone else is currently editing the cell) */
 .editing-indicator {
   position: absolute;
   top: -22px;
   left: 0;
   font-size: 12px;
   font-weight: 500;
-  color: #1e293b;
+  color: #334155;
   padding: 2px 6px;
   border-radius: 6px;
   white-space: nowrap;
-  opacity: 0;
-  animation: fadeIn 0.25s forwards;
+  background: rgba(99,102,241,0.08);
+  border: 1px solid rgba(99,102,241,0.14);
+  box-shadow: 0 4px 10px rgba(2,6,23,0.04);
 }
 
-@keyframes fadeIn { to { opacity: 1; } }
+/* Locked & Working rows */
+.locked {
+  background-color: #fef3c7 !important;
+  opacity: 0.7;
+}
+.working-current {
+  background-color: #dcfce7 !important;
+}
 
-.locked { background-color: #fef3c7 !important; opacity: 0.7; }
-.working-current { background-color: #dcfce7 !important; }
+.req-table input[type="checkbox"] {
+  transform: scale(1.2);
+  accent-color: #4f46e5;
+}
 
-.req-table input[type="checkbox"] { transform: scale(1.2); accent-color: #4f46e5; }
+/* ===== Row Add/Remove Animations ===== */
+.animated-row {
+  transition: all 0.35s ease;
+  opacity: 1;
+  transform: translateY(0);
+}
 
-.animated-row { transition: all 0.35s ease; opacity: 1; transform: translateY(0); }
-.animated-row-enter { opacity: 0; transform: translateY(-15px); }
-.animated-row-exit { opacity: 0; transform: translateY(15px); }
+.animated-row-enter {
+  opacity: 0;
+  transform: translateY(-15px);
+}
+
+.animated-row-exit {
+  opacity: 0;
+  transform: translateY(15px);
+}
 
 @media (max-width: 768px) {
-  .table-actions { flex-direction: column; gap: 12px; }
-  .table-actions button, .table-actions input { width: 100%; }
-  .req-table th, .req-table td { font-size: 13px; }
+  .table-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .table-actions button,
+  .table-actions input {
+    width: 100%;
+  }
+  .req-table th,
+  .req-table td {
+    font-size: 13px;
+  }
 }

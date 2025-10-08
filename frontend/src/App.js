@@ -12,13 +12,11 @@ function App() {
       setUserName(stored);
       return;
     }
-
     let name = "";
     while (!name) {
       name = prompt("Please enter your name (how you want to appear to others):");
       if (!name) alert("Name required");
     }
-
     localStorage.setItem("recruiterName", name);
     setUserName(name);
   }, []);
@@ -27,7 +25,7 @@ function App() {
 
   return (
     <div className="App">
-      <h1 className="app-title">Requirements List</h1>
+      <h1>Requirements List</h1>
       <Table currentUser={userName} />
     </div>
   );
