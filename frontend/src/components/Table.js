@@ -14,7 +14,7 @@ const generateColor = (userName) => {
   return userColors[userName];
 };
 
-function Table({ currentUser }) {
+function Table({ currentUser, socket }) {
   const [rows, setRows] = useState([]);
   const [editing, setEditing] = useState({});
   const typingTimersRef = useRef({});
@@ -31,10 +31,7 @@ function Table({ currentUser }) {
   useEffect(() => {
     fetchRows();
 
-    socket.on("requisitions_updated", (data) => {
-      setRows(data);
-    });
-
+    socket.on("requisitions_updated", (data) => setRows(data));
     socket.on("editing_status", ({ requirementId, field, userName, isEditing }) => {
       setEditing((prev) => ({
         ...prev,
@@ -93,7 +90,6 @@ function Table({ currentUser }) {
     }, 800);
   };
 
-  // ----------- Updated toggleWorking to support 2 users + timestamps -------------
   const toggleWorking = async (row) => {
     if (row.status !== "Open" || row.slots <= 0) return;
 
@@ -150,7 +146,7 @@ function Table({ currentUser }) {
 
   const filteredRows = rows.filter((row) =>
     Object.entries(filters).every(([key, val]) =>
-      row[key].toString().toLowerCase().includes(val.toLowerCase())
+      row[key]?.toString().toLowerCase().includes(val.toLowerCase())
     )
   );
 
@@ -174,7 +170,7 @@ function Table({ currentUser }) {
           <tr>
             {["requirementId", "client", "title", "status"].map((key) => (
               <th key={key} onClick={() => handleSort(key)}>
-                {key.charAt(0).toUpperCase() + key.slice(1)}{" "}
+                {key.charAt(0).toUpperCase() + key.slice(1)}
                 {sortConfig.key === key ? (sortConfig.direction === "asc" ? "▲" : "▼") : ""}
               </th>
             ))}
@@ -299,8 +295,7 @@ function Table({ currentUser }) {
                             disabled={locked}
                             onChange={(e) => {
                               if (field === "slots") {
-                                const newValue = Number(e.target.value);
-                                handleFieldChange(row.requirementId, field, newValue);
+                                handleFieldChange(row.requirementId, field, Number(e.target.value));
                               } else {
                                 handleFieldChange(row.requirementId, field, e.target.value);
                               }
@@ -329,7 +324,10 @@ function Table({ currentUser }) {
                   {assignedUsers.length > 0
                     ? assignedUsers.map((user) => (
                         <div key={user}>
-                          {user} {workingTimes[user] ? `(${new Date(workingTimes[user]).toLocaleTimeString()})` : ""}
+                          {user}{" "}
+                          {workingTimes[user]
+                            ? `(${new Date(workingTimes[user]).toLocaleTimeString()})`
+                            : ""}
                         </div>
                       ))
                     : row.status !== "Open" || row.slots <= 0

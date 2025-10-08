@@ -50,12 +50,15 @@ const mapRow = (row) => ({
   title: row.title,
   status: row.status,
   slots: row.slots,
-  assignedRecruiters: row.assigned_recruiters || [],
-  workingTimes: row.working_times || {},
+  assigned_recruiters: row.assigned_recruiters || [],
+  working_times: row.working_times || {},
 });
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
+
+// Online users
+const onlineUsers = new Map();
 
 // Debounced broadcast
 const broadcastTimers = new Map();
@@ -129,7 +132,7 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
       }
     }
 
-    // Working toggle (max 2)
+    // Working toggle (max 2 users)
     if (typeof working === "boolean") {
       let assigned = row.assigned_recruiters || [];
       let times = row.working_times || {};
@@ -191,7 +194,22 @@ app.get("*", (req, res) => {
 // Socket.IO
 io.on("connection", (socket) => {
   console.log("🟢 Socket connected:", socket.id);
-  socket.on("disconnect", () => console.log("🔴 Socket disconnected:", socket.id));
+
+  socket.on("user_joined", (userName) => {
+    onlineUsers.set(socket.id, userName);
+    io.emit("online_users", Array.from(onlineUsers.values()));
+  });
+
+  socket.on("editing_status", (data) => {
+    socket.broadcast.emit("editing_status", data);
+  });
+
+  socket.on("disconnect", () => {
+    const userName = onlineUsers.get(socket.id);
+    if (userName) onlineUsers.delete(socket.id);
+    io.emit("online_users", Array.from(onlineUsers.values()));
+    console.log("🔴 Socket disconnected:", socket.id, userName);
+  });
 });
 
 const PORT = process.env.PORT || 5000;

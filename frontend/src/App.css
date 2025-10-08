@@ -7,3 +7,9 @@ h1 {
   color: #1976d2;
   margin-bottom: 20px;
 }
+
+.online-users {
+  margin: 8px 0;
+  font-size: 14px;
+  color: #334155;
+}

@@ -207,29 +207,6 @@ body {
   transform: translateY(15px);
 }
 
-/* ===== Working Users & Timestamp Styling ===== */
-.working-user {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  padding: 2px 4px;
-  border-radius: 6px;
-  background-color: #f3f4f6;
-  margin-bottom: 2px;
-}
-
-.working-user span {
-  white-space: nowrap;
-}
-
-.working-time {
-  font-size: 11px;
-  color: #6b7280;
-  font-weight: 500;
-}
-
 @media (max-width: 768px) {
   .table-actions {
     flex-direction: column;
