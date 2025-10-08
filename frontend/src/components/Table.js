@@ -551,22 +551,14 @@ const generateColor = (userName) => {
 
 function Table({ currentUser }) {
   const [rows, setRows] = useState([]);
-  // localEdits holds values the user is actively typing: { "REQ-123::client": "Acme" }
   const [localEdits, setLocalEdits] = useState({});
-  // remoteEditing shows who else is editing a specific field: { "REQ-123::client": "Alice" }
   const [remoteEditing, setRemoteEditing] = useState({});
-  // tracks which fields this client is currently editing (for ignoring incoming updates)
   const editingRef = useRef(new Set());
-
-  const [reqIdEdits, setReqIdEdits] = useState({});
   const [filters, setFilters] = useState({ requirementId: "", client: "", title: "", status: "" });
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
-
-  // Pagination + columns left intact from your previous version (page size 20)
   const PAGE_SIZE = 20;
   const [currentPage, setCurrentPage] = useState(1);
 
-  // columns config (kept same as earlier)
   const [columns, setColumns] = useState([
     { id: "requirementId", label: "Requirement ID", width: 160 },
     { id: "client", label: "Client Name", width: 220 },
@@ -577,7 +569,6 @@ function Table({ currentUser }) {
     { id: "working", label: "Working", width: 110 },
   ]);
 
-  // resizing + drag refs (kept as in previous)
   const resizing = useRef({ active: false, colId: null, startX: 0, startWidth: 0 });
   const dragCol = useRef(null);
 
@@ -585,31 +576,23 @@ function Table({ currentUser }) {
     fetchRows();
 
     socket.on("requisitions_updated", (data) => {
-      // Merge data but do not overwrite any cell currently being edited locally
       setRows((prevRows) => {
         const mapPrev = {};
         prevRows.forEach((r) => (mapPrev[r.requirementId] = r));
-        const merged = data.map((incoming) => {
+        return data.map((incoming) => {
           const existing = mapPrev[incoming.requirementId];
           if (!existing) return incoming;
-          // for each field, if user is editing it, keep local value instead of incoming
-          const mergedRow = { ...incoming }; // base from incoming to pick up latest ids etc
+          const mergedRow = { ...incoming };
           ["client", "title", "status", "slots", "requirementId"].forEach((f) => {
             const key = `${incoming.requirementId}::${f}`;
             if (localEdits[key] !== undefined && editingRef.current.has(key)) {
-              // keep local editing value
-              mergedRow[f === "requirementId" ? "requirementId" : f] = localEdits[key];
-            } else {
-              // else keep incoming (latest)
-              // already set from incoming
+              mergedRow[f] = localEdits[key];
             }
           });
-          // preserve assigned_recruiters and working_times from incoming (they're arrays/objects)
           mergedRow.assigned_recruiters = incoming.assigned_recruiters || [];
           mergedRow.working_times = incoming.working_times || {};
           return mergedRow;
         });
-        return merged;
       });
     });
 
@@ -627,8 +610,7 @@ function Table({ currentUser }) {
       socket.off("requisitions_updated");
       socket.off("editing_status");
     };
-    
-  }, [localEdits]); // include localEdits so merge logic can reference latest edits
+  }, [localEdits]);
 
   const fetchRows = async () => {
     try {
@@ -639,45 +621,33 @@ function Table({ currentUser }) {
     }
   };
 
-  // Emit editing status to server (server rebroadcasts to others)
   const broadcastEditing = (requirementId, field, isEditing) => {
     socket.emit("editing_status", { requirementId, field, userName: currentUser, isEditing });
   };
 
-  // When user types, only update localEdits (do not send to server yet)
   const handleLocalChange = (requirementId, field, value) => {
     const key = `${requirementId}::${field}`;
     setLocalEdits((prev) => ({ ...prev, [key]: value }));
   };
 
-  // Save on blur (or Enter)
   const handleSave = async (originalReqId, field) => {
     const key = `${originalReqId}::${field}`;
     if (!(key in localEdits)) {
-      // nothing to save
       editingRef.current.delete(key);
       broadcastEditing(originalReqId, field, false);
       return;
     }
     const value = localEdits[key];
-
     try {
-      // Special handling for requirementId (rename)
       if (field === "requirementId") {
-        // If user changed the ID, send newRequirementId to backend (existing logic)
         if (value && value !== originalReqId) {
           await axios.put(`/api/requisitions/${originalReqId}`, { newRequirementId: value });
         }
       } else if (field === "slots") {
-        // ensure numeric
-        const numeric = Number(value || 0);
-        await axios.put(`/api/requisitions/${originalReqId}`, { slots: numeric });
+        await axios.put(`/api/requisitions/${originalReqId}`, { slots: Number(value || 0) });
       } else {
-        const body = {};
-        body[field] = value;
-        await axios.put(`/api/requisitions/${originalReqId}`, body);
+        await axios.put(`/api/requisitions/${originalReqId}`, { [field]: value });
       }
-      // After successful save: remove local edit and stop editing flag
       setLocalEdits((prev) => {
         const copy = { ...prev };
         delete copy[key];
@@ -685,9 +655,7 @@ function Table({ currentUser }) {
       });
       editingRef.current.delete(key);
       broadcastEditing(originalReqId, field, false);
-      // let server broadcast the authoritative updated rows (requisitions_updated) which will merge
     } catch (err) {
-      // on error, notify user and re-fetch to restore consistent state
       console.error("Save failed:", err);
       alert(err.response?.data?.message || "Save failed");
       setLocalEdits((prev) => {
@@ -701,11 +669,9 @@ function Table({ currentUser }) {
     }
   };
 
-  // Toggle working status sends immediately (preserves your business rules on backend)
   const toggleWorking = async (row) => {
     const assignedUsers = row.assigned_recruiters || [];
     const isAlreadyAssigned = assignedUsers.includes(currentUser);
-
     const userWorkingElsewhere = rows.some(
       (r) =>
         r.requirementId !== row.requirementId &&
@@ -726,7 +692,6 @@ function Table({ currentUser }) {
         working: !isAlreadyAssigned,
         userName: currentUser,
       });
-      // server's broadcast will update UI
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || "Working toggle failed");
@@ -771,7 +736,6 @@ function Table({ currentUser }) {
     }));
   };
 
-  // Filtering
   const filteredRows = rows.filter((row) =>
     Object.entries(filters).every(([key, val]) => {
       if (!val) return true;
@@ -789,7 +753,6 @@ function Table({ currentUser }) {
     })
   );
 
-  // Sorting
   const sortedRows = [...filteredRows].sort((a, b) => {
     if (!sortConfig.key) return 0;
     const aVal =
@@ -806,7 +769,6 @@ function Table({ currentUser }) {
     return 0;
   });
 
-  // Pagination calculations
   const totalPages = Math.max(1, Math.ceil(sortedRows.length / PAGE_SIZE));
   useEffect(() => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
@@ -815,7 +777,6 @@ function Table({ currentUser }) {
   const pageStart = (currentPage - 1) * PAGE_SIZE;
   const pageRows = sortedRows.slice(pageStart, pageStart + PAGE_SIZE);
 
-  // Column resize handlers (kept)
   const startResize = (colId, e) => {
     e.preventDefault();
     resizing.current = {
@@ -847,7 +808,6 @@ function Table({ currentUser }) {
     };
   }, [columns]);
 
-  // Column reorder handlers (kept)
   const onDragStart = (colId, e) => {
     dragCol.current = colId;
     e.dataTransfer.effectAllowed = "move";
@@ -868,22 +828,18 @@ function Table({ currentUser }) {
     dragCol.current = null;
   };
 
-  // Helpers to get current displayed value (prefer localEdits if present)
   const displayValue = (row, field) => {
     const key = `${row.requirementId}::${field}`;
     if (localEdits[key] !== undefined) return localEdits[key];
-    // map internal keys
     if (field === "requirementId") return row.requirementId ?? "";
     if (field === "slots") return row.slots ?? 0;
     return row[field] ?? "";
   };
 
-  // When focus enters an input -> broadcast editing true, mark editingRef
   const handleFocus = (requirementId, field) => {
     const key = `${requirementId}::${field}`;
     editingRef.current.add(key);
     broadcastEditing(requirementId, field, true);
-    // initialize localEdits with current row value if not set
     setLocalEdits((prev) => {
       if (prev[key] !== undefined) return prev;
       const row = rows.find((r) => r.requirementId === requirementId);
@@ -892,16 +848,13 @@ function Table({ currentUser }) {
     });
   };
 
-  // When pressing Enter in an input, commit save immediately
   const handleKeyDown = (e, originalReqId, field) => {
     if (e.key === "Enter") {
       e.preventDefault();
       handleSave(originalReqId, field);
-      // blur the input to end editing mode
       if (e.target) e.target.blur();
     }
     if (e.key === "Escape") {
-      // Cancel edit: remove local edit and stop editing mode
       const key = `${originalReqId}::${field}`;
       setLocalEdits((prev) => {
         const copy = { ...prev };
@@ -910,7 +863,6 @@ function Table({ currentUser }) {
       });
       editingRef.current.delete(key);
       broadcastEditing(originalReqId, field, false);
-      // also refetch to restore authoritative value
       fetchRows();
       if (e.target) e.target.blur();
     }
@@ -918,51 +870,18 @@ function Table({ currentUser }) {
 
   return (
     <div className="table-container">
+      {/* Controls above table */}
       <div className="table-actions">
-        <div style={{ display: "flex", gap: 12 }}>
-          <button onClick={addRow}>Add Row</button>
-          <div className="global-search">
-            <input
-              placeholder="Global search..."
-              onChange={(e) => {
-                const v = e.target.value;
-                setFilters({ requirementId: v, client: v, title: v, status: v });
-                setCurrentPage(1);
-              }}
-            />
-          </div>
-        </div>
+        <button onClick={addRow}>Add Row</button>
 
         <div className="pagination-controls">
-          <button
-            onClick={() => setCurrentPage(1)}
-            disabled={currentPage === 1}
-            title="First"
-          >
-            «
-          </button>
-          <button
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage === 1}
-          >
-            ‹
-          </button>
+          <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} title="First">«</button>
+          <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}>‹</button>
           <span className="page-indicator">
             Page {currentPage} / {totalPages}
           </span>
-          <button
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={currentPage === totalPages}
-          >
-            ›
-          </button>
-          <button
-            onClick={() => setCurrentPage(totalPages)}
-            disabled={currentPage === totalPages}
-            title="Last"
-          >
-            »
-          </button>
+          <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>›</button>
+          <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} title="Last">»</button>
         </div>
       </div>
 
@@ -1012,13 +931,14 @@ function Table({ currentUser }) {
               ))}
             </tr>
 
+            {/* Filter row */}
             <tr className="filter-row">
               {columns.map((col) => {
                 if (["requirementId", "client", "title", "status"].includes(col.id)) {
                   return (
                     <th key={`${col.id}-filter`}>
                       <input
-                        placeholder={`Filter ${col.label}`}
+                        placeholder="Filter..."
                         value={filters[col.id] ?? ""}
                         onChange={(e) => {
                           setFilters((prev) => ({ ...prev, [col.id]: e.target.value }));
@@ -1042,30 +962,20 @@ function Table({ currentUser }) {
               return (
                 <tr
                   key={row.requirementId}
-                  className={`animated-row ${
-                    locked
-                      ? "locked"
-                      : assignedUsers.includes(currentUser)
-                      ? "working-current"
-                      : ""
-                  }`}
+                  className={`animated-row ${locked ? "locked" : assignedUsers.includes(currentUser) ? "working-current" : ""}`}
                 >
                   {columns.map((col) => {
                     if (col.id === "assigned") {
                       return (
                         <td key={`${row.requirementId}-assigned`}>
-                          {assignedUsers.length > 0
-                            ? assignedUsers.map((user) => (
-                                <div key={user} className="assigned-pill" style={{ background: generateColor(user) }}>
-                                  <span className="assigned-name">{user}</span>
-                                  <span className="assigned-time">
-                                    {workingTimes[user] ? ` (${new Date(workingTimes[user]).toLocaleTimeString()})` : ""}
-                                  </span>
-                                </div>
-                              ))
-                            : row.status !== "Open" || row.slots <= 0
-                            ? "Non-Workable"
-                            : ""}
+                          {assignedUsers.map((user) => (
+                            <div key={user} className="assigned-pill" style={{ background: generateColor(user) }}>
+                              <span className="assigned-name">{user}</span>
+                              <span className="assigned-time">
+                                {workingTimes[user] ? ` (${new Date(workingTimes[user]).toLocaleTimeString()})` : ""}
+                              </span>
+                            </div>
+                          ))}
                         </td>
                       );
                     }
@@ -1085,45 +995,17 @@ function Table({ currentUser }) {
 
                     const field = col.id;
                     let value = displayValue(row, field);
+                    const key = `${row.requirementId}::${field}`;
+                    const remoteEditor = remoteEditing[key];
+                    const isEditingLocally = editingRef.current.has(key);
 
-                    // requirementId special edit behavior
-                    if (field === "requirementId") {
-                      const key = `${row.requirementId}::requirementId`;
-                      const remoteEditor = remoteEditing[key];
-                      const isEditingLocally = editingRef.current.has(key);
-
-                      return (
-                        <td key={`${row.requirementId}-reqid`}>
-                          <div className="input-wrapper">
-                            {remoteEditor && !isEditingLocally ? (
-                              <div className="editing-indicator">{remoteEditor} editing</div>
-                            ) : null}
-                            <input
-                              type="text"
-                              value={value}
-                              disabled={locked}
-                              onFocus={() => handleFocus(row.requirementId, "requirementId")}
-                              onChange={(e) => handleLocalChange(row.requirementId, "requirementId", e.target.value)}
-                              onBlur={() => handleSave(row.requirementId, "requirementId")}
-                              onKeyDown={(e) => handleKeyDown(e, row.requirementId, "requirementId")}
-                              style={{ width: "100%" }}
-                            />
-                          </div>
-                        </td>
-                      );
-                    }
-
-                    if (field === "status") {
-                      const key = `${row.requirementId}::status`;
-                      const remoteEditor = remoteEditing[key];
-                      const isEditingLocally = editingRef.current.has(key);
-
-                      return (
-                        <td key={`${row.requirementId}-status`}>
-                          <div className="input-wrapper">
-                            {remoteEditor && !isEditingLocally ? (
-                              <div className="editing-indicator">{remoteEditor} editing</div>
-                            ) : null}
+                    return (
+                      <td key={`${row.requirementId}-${field}`}>
+                        <div className="input-wrapper">
+                          {remoteEditor && !isEditingLocally ? (
+                            <div className="editing-indicator">{remoteEditor} editing</div>
+                          ) : null}
+                          {field === "status" ? (
                             <select
                               value={value || "Open"}
                               disabled={locked}
@@ -1137,33 +1019,19 @@ function Table({ currentUser }) {
                               <option value="Cancelled">Cancelled</option>
                               <option value="Filled">Filled</option>
                             </select>
-                          </div>
-                        </td>
-                      );
-                    }
-
-                    // generic input for client/title/slots
-                    const key = `${row.requirementId}::${field}`;
-                    const remoteEditor = remoteEditing[key];
-                    const isEditingLocally = editingRef.current.has(key);
-
-                    return (
-                      <td key={`${row.requirementId}-${field}`}>
-                        <div className="input-wrapper">
-                          {remoteEditor && !isEditingLocally ? (
-                            <div className="editing-indicator">{remoteEditor} editing</div>
-                          ) : null}
-                          <input
-                            type={field === "slots" ? "number" : "text"}
-                            value={value}
-                            disabled={locked}
-                            onFocus={() => handleFocus(row.requirementId, field)}
-                            onChange={(e) =>
-                              handleLocalChange(row.requirementId, field, field === "slots" ? Number(e.target.value) : e.target.value)
-                            }
-                            onBlur={() => handleSave(row.requirementId, field)}
-                            onKeyDown={(e) => handleKeyDown(e, row.requirementId, field)}
-                          />
+                          ) : (
+                            <input
+                              type={field === "slots" ? "number" : "text"}
+                              value={value}
+                              disabled={locked}
+                              onFocus={() => handleFocus(row.requirementId, field)}
+                              onChange={(e) =>
+                                handleLocalChange(row.requirementId, field, field === "slots" ? Number(e.target.value) : e.target.value)
+                              }
+                              onBlur={() => handleSave(row.requirementId, field)}
+                              onKeyDown={(e) => handleKeyDown(e, row.requirementId, field)}
+                            />
+                          )}
                         </div>
                       </td>
                     );
