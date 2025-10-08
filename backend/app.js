@@ -57,9 +57,18 @@ const mapRow = (row) => ({
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-const broadcastAll = async () => {
-  const all = await pool.query("SELECT * FROM requisitions ORDER BY id DESC");
-  io.emit("requisitions_updated", all.rows.map(mapRow));
+// Debounced broadcast map
+const broadcastTimers = new Map();
+const broadcastDebounced = async (key = "all") => {
+  if (broadcastTimers.has(key)) clearTimeout(broadcastTimers.get(key));
+  broadcastTimers.set(
+    key,
+    setTimeout(async () => {
+      const all = await pool.query("SELECT * FROM requisitions ORDER BY id DESC");
+      io.emit("requisitions_updated", all.rows.map(mapRow));
+      broadcastTimers.delete(key);
+    }, 1200) // wait 1.2s after last edit before pushing to everyone
+  );
 };
 
 // GET all requisitions
@@ -84,7 +93,7 @@ app.post("/api/requisitions", async (req, res) => {
        RETURNING *`,
       [requirementId, client || "", title || "", status || "Open", slots || 0]
     );
-    await broadcastAll();
+    await broadcastDebounced(); // broadcast after small delay
     if (result.rows[0]) return res.status(201).json(mapRow(result.rows[0]));
     return res.status(409).json({ message: "RequirementId conflict or not inserted" });
   } catch (err) {
@@ -97,19 +106,16 @@ app.post("/api/requisitions", async (req, res) => {
 app.put("/api/requisitions/:requirementId", async (req, res) => {
   const { requirementId } = req.params;
   try {
-    const select = await pool.query(
-      "SELECT * FROM requisitions WHERE requirement_id = $1",
-      [requirementId]
-    );
+    const select = await pool.query("SELECT * FROM requisitions WHERE requirement_id = $1", [requirementId]);
     const row = select.rows[0];
 
-    // If row doesn't exist but newRequirementId is sent, try to update it
+    // Case: requirementId being changed (rename)
     if (!row && req.body.newRequirementId) {
       const updateNewId = await pool.query(
         "UPDATE requisitions SET requirement_id=$1 WHERE requirement_id=$2 RETURNING *",
         [req.body.newRequirementId, requirementId]
       );
-      await broadcastAll();
+      await broadcastDebounced();
       return res.json(mapRow(updateNewId.rows[0]));
     }
 
@@ -143,11 +149,11 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
           [requirementId]
         );
       }
-      await broadcastAll();
+      await broadcastDebounced();
       return res.json({ message: "Working status updated" });
     }
 
-    // Regular field updates (client, title, status, slots, requirement_id)
+    // Normal edits (client, title, status, slots, requirement_id)
     const updates = {
       requirement_id: req.body.requirementId || row.requirement_id,
       client: req.body.client !== undefined ? req.body.client : row.client,
@@ -163,7 +169,8 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
       [updates.requirement_id, updates.client, updates.title, updates.status, updates.slots, row.id]
     );
 
-    await broadcastAll();
+    // Debounced broadcast prevents instant refocus loss
+    await broadcastDebounced();
     return res.json(mapRow(updated.rows[0]));
   } catch (err) {
     console.error(err);
@@ -171,7 +178,7 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
   }
 });
 
-// Serve frontend build
+// Serve frontend
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, "../frontend/build")));
@@ -184,18 +191,8 @@ app.get("*", (req, res) => {
 // Socket.IO
 io.on("connection", (socket) => {
   console.log("🟢 Socket connected:", socket.id);
-
-  // Handle editing notifications from frontend
-  socket.on("editing_status", ({ requirementId, field, userName, isEditing }) => {
-    io.emit("editing_status", { requirementId, field, userName, isEditing });
-  });
-
-  socket.on("disconnect", () => {
-    console.log("🔴 Socket disconnected:", socket.id);
-  });
+  socket.on("disconnect", () => console.log("🔴 Socket disconnected:", socket.id));
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () =>
-  console.log(`✅ Backend + Frontend running on port ${PORT}`)
-);
+server.listen(PORT, () => console.log(`✅ Backend + Frontend running on port ${PORT}`));
