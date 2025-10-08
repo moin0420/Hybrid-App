@@ -57,9 +57,6 @@ const mapRow = (row) => ({
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-// Online users
-const onlineUsers = new Map();
-
 // Debounced broadcast
 const broadcastTimers = new Map();
 const broadcastDebounced = async (key = "all") => {
@@ -132,20 +129,28 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
       }
     }
 
-    // Working toggle (max 2 users)
+    // Working toggle (max 2 users per requirement, 1 requirement per user)
     if (typeof working === "boolean") {
       let assigned = row.assigned_recruiters || [];
       let times = row.working_times || {};
 
+      if (!userName) return res.status(400).json({ message: "userName required" });
+
       if (working) {
-        if (!userName) return res.status(400).json({ message: "userName required" });
         if (!assigned.includes(userName)) {
           if (assigned.length >= 2) return res.status(409).json({ message: "Maximum 2 users already assigned" });
+
+          // Check if user is already working on another requirement
+          const all = await pool.query("SELECT * FROM requisitions");
+          const userBusy = all.rows.some(
+            (r) => r.requirement_id !== requirementId && (r.assigned_recruiters || []).includes(userName)
+          );
+          if (userBusy) return res.status(409).json({ message: "User already working on another requirement" });
+
           assigned.push(userName);
           times[userName] = new Date().toISOString();
         }
       } else {
-        if (!userName) return res.status(400).json({ message: "userName required" });
         assigned = assigned.filter((u) => u !== userName);
         delete times[userName];
       }
@@ -194,22 +199,7 @@ app.get("*", (req, res) => {
 // Socket.IO
 io.on("connection", (socket) => {
   console.log("🟢 Socket connected:", socket.id);
-
-  socket.on("user_joined", (userName) => {
-    onlineUsers.set(socket.id, userName);
-    io.emit("online_users", Array.from(onlineUsers.values()));
-  });
-
-  socket.on("editing_status", (data) => {
-    socket.broadcast.emit("editing_status", data);
-  });
-
-  socket.on("disconnect", () => {
-    const userName = onlineUsers.get(socket.id);
-    if (userName) onlineUsers.delete(socket.id);
-    io.emit("online_users", Array.from(onlineUsers.values()));
-    console.log("🔴 Socket disconnected:", socket.id, userName);
-  });
+  socket.on("disconnect", () => console.log("🔴 Socket disconnected:", socket.id));
 });
 
 const PORT = process.env.PORT || 5000;

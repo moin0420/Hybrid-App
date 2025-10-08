@@ -14,24 +14,21 @@ const generateColor = (userName) => {
   return userColors[userName];
 };
 
-function Table({ currentUser, socket }) {
+function Table({ currentUser }) {
   const [rows, setRows] = useState([]);
   const [editing, setEditing] = useState({});
   const typingTimersRef = useRef({});
-  const [localEdits, setLocalEdits] = useState({});
   const [reqIdEdits, setReqIdEdits] = useState({});
-  const [filters, setFilters] = useState({
-    requirementId: "",
-    client: "",
-    title: "",
-    status: "",
-  });
+  const [filters, setFilters] = useState({ requirementId: "", client: "", title: "", status: "" });
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
 
   useEffect(() => {
     fetchRows();
 
-    socket.on("requisitions_updated", (data) => setRows(data));
+    socket.on("requisitions_updated", (data) => {
+      setRows(data);
+    });
+
     socket.on("editing_status", ({ requirementId, field, userName, isEditing }) => {
       setEditing((prev) => ({
         ...prev,
@@ -60,21 +57,12 @@ function Table({ currentUser, socket }) {
 
   const handleFieldChange = (requirementId, field, value) => {
     if (field === "requirementId") return;
-
     setRows((prev) =>
       prev.map((r) => (r.requirementId === requirementId ? { ...r, [field]: value } : r))
     );
-
-    setLocalEdits((prev) => ({
-      ...prev,
-      [requirementId]: { ...(prev[requirementId] || {}), [field]: value },
-    }));
-
     broadcastEditing(requirementId, field, true);
-
     const key = `${requirementId}::${field}`;
     if (typingTimersRef.current[key]) clearTimeout(typingTimersRef.current[key]);
-
     typingTimersRef.current[key] = setTimeout(async () => {
       try {
         await axios.put(`/api/requisitions/${requirementId}`, { [field]: value });
@@ -91,15 +79,17 @@ function Table({ currentUser, socket }) {
   };
 
   const toggleWorking = async (row) => {
-    if (row.status !== "Open" || row.slots <= 0) return;
-
     const assignedUsers = row.assigned_recruiters || [];
     const isAlreadyAssigned = assignedUsers.includes(currentUser);
 
-    if (!isAlreadyAssigned && assignedUsers.length >= 2) {
-      alert("Maximum 2 users already working on this requirement.");
-      return;
-    }
+    const userWorkingElsewhere = rows.some(
+      (r) =>
+        r.requirementId !== row.requirementId &&
+        (r.assigned_recruiters || []).includes(currentUser)
+    );
+
+    if (!isAlreadyAssigned && userWorkingElsewhere) return;
+    if (!isAlreadyAssigned && assignedUsers.length >= 2) return;
 
     try {
       await axios.put(`/api/requisitions/${row.requirementId}`, {
@@ -131,22 +121,27 @@ function Table({ currentUser, socket }) {
 
   const isLockedByOther = (row) => {
     const assignedUsers = row.assigned_recruiters || [];
-    return assignedUsers.length >= 2 && !assignedUsers.includes(currentUser);
+    const userWorkingElsewhere = rows.some(
+      (r) =>
+        r.requirementId !== row.requirementId &&
+        (r.assigned_recruiters || []).includes(currentUser)
+    );
+    return (
+      (assignedUsers.length >= 2 && !assignedUsers.includes(currentUser)) ||
+      (!assignedUsers.includes(currentUser) && userWorkingElsewhere)
+    );
   };
 
   const handleSort = (key) => {
-    setSortConfig((prev) => {
-      if (prev.key === key) {
-        return { key, direction: prev.direction === "asc" ? "desc" : "asc" };
-      } else {
-        return { key, direction: "asc" };
-      }
-    });
+    setSortConfig((prev) => ({
+      key,
+      direction: prev.key === key && prev.direction === "asc" ? "desc" : "asc",
+    }));
   };
 
   const filteredRows = rows.filter((row) =>
     Object.entries(filters).every(([key, val]) =>
-      row[key]?.toString().toLowerCase().includes(val.toLowerCase())
+      row[key].toString().toLowerCase().includes(val.toLowerCase())
     )
   );
 
@@ -164,13 +159,12 @@ function Table({ currentUser, socket }) {
       <div className="table-actions">
         <button onClick={addRow}>Add Row</button>
       </div>
-
       <table className="req-table">
         <thead>
           <tr>
             {["requirementId", "client", "title", "status"].map((key) => (
               <th key={key} onClick={() => handleSort(key)}>
-                {key.charAt(0).toUpperCase() + key.slice(1)}
+                {key.charAt(0).toUpperCase() + key.slice(1)}{" "}
                 {sortConfig.key === key ? (sortConfig.direction === "asc" ? "▲" : "▼") : ""}
               </th>
             ))}
@@ -182,7 +176,7 @@ function Table({ currentUser, socket }) {
             {["requirementId", "client", "title", "status"].map((key) => (
               <th key={key}>
                 <input
-                  placeholder={`Filter ${key}`}
+                  placeholder={`Filter...`}
                   value={filters[key]}
                   onChange={(e) =>
                     setFilters((prev) => ({ ...prev, [key]: e.target.value }))
@@ -213,9 +207,6 @@ function Table({ currentUser, socket }) {
                 }`}
               >
                 {["requirementId", "client", "title", "status", "slots"].map((field) => {
-                  const editingUser = editing[`${row.requirementId}::${field}`];
-                  const isEditing = editingUser && editingUser !== currentUser;
-
                   const value =
                     field === "status"
                       ? row.status ?? "Open"
@@ -258,14 +249,6 @@ function Table({ currentUser, socket }) {
                             }}
                             style={{ width: `${Math.max(value.length, 4)}ch` }}
                           />
-                          {isEditing && (
-                            <span
-                              className="editing-indicator"
-                              style={{ backgroundColor: generateColor(editingUser) }}
-                            >
-                              Editing by {editingUser}
-                            </span>
-                          )}
                         </div>
                       </td>
                     );
@@ -288,33 +271,18 @@ function Table({ currentUser, socket }) {
                           <option value="Filled">Filled</option>
                         </select>
                       ) : (
-                        <div className="input-wrapper">
-                          <input
-                            type={field === "slots" ? "number" : "text"}
-                            value={value}
-                            disabled={locked}
-                            onChange={(e) => {
-                              if (field === "slots") {
-                                handleFieldChange(row.requirementId, field, Number(e.target.value));
-                              } else {
-                                handleFieldChange(row.requirementId, field, e.target.value);
-                              }
-                            }}
-                            style={
-                              field === "client" || field === "title"
-                                ? { width: `${Math.max(value.length, 4)}ch` }
-                                : {}
-                            }
-                          />
-                          {isEditing && (
-                            <span
-                              className="editing-indicator"
-                              style={{ backgroundColor: generateColor(editingUser) }}
-                            >
-                              Editing by {editingUser}
-                            </span>
-                          )}
-                        </div>
+                        <input
+                          type={field === "slots" ? "number" : "text"}
+                          value={value}
+                          disabled={locked}
+                          onChange={(e) =>
+                            handleFieldChange(
+                              row.requirementId,
+                              field,
+                              field === "slots" ? Number(e.target.value) : e.target.value
+                            )
+                          }
+                        />
                       )}
                     </td>
                   );
@@ -324,10 +292,7 @@ function Table({ currentUser, socket }) {
                   {assignedUsers.length > 0
                     ? assignedUsers.map((user) => (
                         <div key={user}>
-                          {user}{" "}
-                          {workingTimes[user]
-                            ? `(${new Date(workingTimes[user]).toLocaleTimeString()})`
-                            : ""}
+                          {user} {workingTimes[user] ? `(${new Date(workingTimes[user]).toLocaleTimeString()})` : ""}
                         </div>
                       ))
                     : row.status !== "Open" || row.slots <= 0
