@@ -1,4 +1,3 @@
-// frontend/src/components/Table.js
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
@@ -20,6 +19,13 @@ function Table({ currentUser }) {
   const [editing, setEditing] = useState({});
   const typingTimersRef = useRef({});
   const [localEdits, setLocalEdits] = useState({});
+  const [filters, setFilters] = useState({
+    requirementId: "",
+    client: "",
+    title: "",
+    status: "",
+  });
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
 
   useEffect(() => {
     fetchRows();
@@ -133,27 +139,69 @@ function Table({ currentUser }) {
   const isLockedByOther = (row) =>
     row.working && row.assignedRecruiter && row.assignedRecruiter !== currentUser;
 
+  const handleSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === "asc" ? "desc" : "asc" };
+      } else {
+        return { key, direction: "asc" };
+      }
+    });
+  };
+
+  const filteredRows = rows.filter((row) =>
+    Object.entries(filters).every(([key, val]) =>
+      row[key].toString().toLowerCase().includes(val.toLowerCase())
+    )
+  );
+
+  const sortedRows = [...filteredRows].sort((a, b) => {
+    if (!sortConfig.key) return 0;
+    const aVal = a[sortConfig.key]?.toString().toLowerCase() || "";
+    const bVal = b[sortConfig.key]?.toString().toLowerCase() || "";
+    if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
+    if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
+    return 0;
+  });
+
   return (
     <div className="table-container">
       <div className="table-actions">
         <button onClick={addRow}>Add Row</button>
-        <input placeholder="Filter..." onChange={() => {}} />
       </div>
 
       <table className="req-table">
         <thead>
           <tr>
-            <th>Requirement ID</th>
-            <th>Client</th>
-            <th>Title</th>
-            <th>Status</th>
+            {["requirementId", "client", "title", "status"].map((key) => (
+              <th key={key} onClick={() => handleSort(key)}>
+                {key.charAt(0).toUpperCase() + key.slice(1)}{" "}
+                {sortConfig.key === key ? (sortConfig.direction === "asc" ? "▲" : "▼") : ""}
+              </th>
+            ))}
             <th>Slots</th>
             <th>Assigned Recruiter</th>
             <th>Working</th>
           </tr>
+          <tr>
+            {["requirementId", "client", "title", "status"].map((key) => (
+              <th key={key}>
+                <input
+                  placeholder={`Filter ${key}`}
+                  value={filters[key]}
+                  onChange={(e) =>
+                    setFilters((prev) => ({ ...prev, [key]: e.target.value }))
+                  }
+                />
+              </th>
+            ))}
+            <th></th>
+            <th></th>
+            <th></th>
+          </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {sortedRows.map((row) => {
             const locked = isLockedByOther(row);
 
             return (

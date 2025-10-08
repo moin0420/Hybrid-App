@@ -82,6 +82,36 @@ body {
   font-weight: 600;
   color: #334155;
   border-bottom: 1px solid #e2e8f0;
+  position: relative;
+  cursor: pointer;
+  user-select: none;
+}
+
+.req-table th input {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+}
+
+.req-table th.sorted-asc::after,
+.req-table th.sorted-desc::after {
+  content: '';
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  border: 5px solid transparent;
+  transform: translateY(-50%);
+}
+
+.req-table th.sorted-asc::after {
+  border-bottom-color: #4f46e5;
+}
+
+.req-table th.sorted-desc::after {
+  border-top-color: #4f46e5;
 }
 
 .req-table td {
@@ -94,6 +124,7 @@ body {
 .req-table tbody tr:nth-child(even) {
   background-color: #f8fafc;
 }
+
 .req-table tbody tr:hover {
   background-color: #eef2ff;
   transition: background-color 0.2s ease-in-out;
