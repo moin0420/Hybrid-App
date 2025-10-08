@@ -32,8 +32,8 @@ const initTable = async () => {
         title TEXT,
         status TEXT,
         slots INTEGER DEFAULT 0,
-        assigned_recruiter TEXT DEFAULT '',
-        working BOOLEAN DEFAULT FALSE
+        assigned_recruiters TEXT[] DEFAULT '{}',
+        working_times JSONB DEFAULT '{}'
       );
     `);
     console.log("✅ Table initialized successfully");
@@ -50,14 +50,14 @@ const mapRow = (row) => ({
   title: row.title,
   status: row.status,
   slots: row.slots,
-  assignedRecruiter: row.assigned_recruiter || "",
-  working: row.working,
+  assignedRecruiters: row.assigned_recruiters || [],
+  workingTimes: row.working_times || {},
 });
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-// Debounced broadcast map
+// Debounced broadcast
 const broadcastTimers = new Map();
 const broadcastDebounced = async (key = "all") => {
   if (broadcastTimers.has(key)) clearTimeout(broadcastTimers.get(key));
@@ -67,7 +67,7 @@ const broadcastDebounced = async (key = "all") => {
       const all = await pool.query("SELECT * FROM requisitions ORDER BY id DESC");
       io.emit("requisitions_updated", all.rows.map(mapRow));
       broadcastTimers.delete(key);
-    }, 1200) // wait 1.2s after last edit before pushing to everyone
+    }, 1200)
   );
 };
 
@@ -110,14 +110,12 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
   try {
     const select = await pool.query("SELECT * FROM requisitions WHERE requirement_id = $1", [requirementId]);
     const row = select.rows[0];
-
     if (!row) return res.status(404).json({ message: "Requirement not found" });
 
-    // Case: requirementId being renamed
+    // Update requirementId
     if (newRequirementId) {
-      if (newRequirementId === requirementId) {
+      if (newRequirementId === requirementId)
         return res.status(400).json({ message: "New requirementId is same as current" });
-      }
       try {
         const updateNewId = await pool.query(
           "UPDATE requisitions SET requirement_id=$1 WHERE requirement_id=$2 RETURNING *",
@@ -126,42 +124,38 @@ app.put("/api/requisitions/:requirementId", async (req, res) => {
         await broadcastDebounced();
         return res.json(mapRow(updateNewId.rows[0]));
       } catch (err) {
-        if (err.code === "23505") {
-          return res.status(409).json({ message: "RequirementId already exists" });
-        }
+        if (err.code === "23505") return res.status(409).json({ message: "RequirementId already exists" });
         throw err;
       }
     }
 
-    // Working toggle
+    // Working toggle (max 2)
     if (typeof working === "boolean") {
-      const currentAssigned = row.assigned_recruiter || "";
+      let assigned = row.assigned_recruiters || [];
+      let times = row.working_times || {};
+
       if (working) {
-        if (currentAssigned && currentAssigned !== "") {
-          return res.status(409).json({ message: `Already assigned to ${currentAssigned}` });
+        if (!userName) return res.status(400).json({ message: "userName required" });
+        if (!assigned.includes(userName)) {
+          if (assigned.length >= 2) return res.status(409).json({ message: "Maximum 2 users already assigned" });
+          assigned.push(userName);
+          times[userName] = new Date().toISOString();
         }
-        if (!userName) return res.status(400).json({ message: "userName required to assign" });
-        await pool.query(
-          "UPDATE requisitions SET working = TRUE, assigned_recruiter = $1 WHERE requirement_id = $2",
-          [userName, requirementId]
-        );
       } else {
-        if (!currentAssigned || currentAssigned === "") {
-          return res.status(200).json({ message: "Already unassigned" });
-        }
-        if (currentAssigned !== userName) {
-          return res.status(409).json({ message: `Cannot unassign; assigned to ${currentAssigned}` });
-        }
-        await pool.query(
-          "UPDATE requisitions SET working = FALSE, assigned_recruiter = '' WHERE requirement_id = $1",
-          [requirementId]
-        );
+        if (!userName) return res.status(400).json({ message: "userName required" });
+        assigned = assigned.filter((u) => u !== userName);
+        delete times[userName];
       }
+
+      await pool.query(
+        "UPDATE requisitions SET assigned_recruiters=$1, working_times=$2 WHERE requirement_id=$3",
+        [assigned, times, requirementId]
+      );
       await broadcastDebounced();
       return res.json({ message: "Working status updated" });
     }
 
-    // Normal edits (client, title, status, slots)
+    // Normal edits
     const updates = {
       client: client !== undefined ? client : row.client,
       title: title !== undefined ? title : row.title,

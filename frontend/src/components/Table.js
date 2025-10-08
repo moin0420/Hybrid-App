@@ -19,7 +19,7 @@ function Table({ currentUser }) {
   const [editing, setEditing] = useState({});
   const typingTimersRef = useRef({});
   const [localEdits, setLocalEdits] = useState({});
-  const [reqIdEdits, setReqIdEdits] = useState({}); // <-- Local state for requirementId edits
+  const [reqIdEdits, setReqIdEdits] = useState({});
   const [filters, setFilters] = useState({
     requirementId: "",
     client: "",
@@ -62,7 +62,7 @@ function Table({ currentUser }) {
   };
 
   const handleFieldChange = (requirementId, field, value) => {
-    if (field === "requirementId") return; // Skip requirementId here, handled separately
+    if (field === "requirementId") return;
 
     setRows((prev) =>
       prev.map((r) => (r.requirementId === requirementId ? { ...r, [field]: value } : r))
@@ -93,23 +93,21 @@ function Table({ currentUser }) {
     }, 800);
   };
 
+  // ----------- Updated toggleWorking to support 2 users + timestamps -------------
   const toggleWorking = async (row) => {
     if (row.status !== "Open" || row.slots <= 0) return;
 
-    const alreadyWorking = rows.find(
-      (r) => r.working && r.assignedRecruiter === currentUser && r.requirementId !== row.requirementId
-    );
+    const assignedUsers = row.assigned_recruiters || [];
+    const isAlreadyAssigned = assignedUsers.includes(currentUser);
 
-    if (!row.working && alreadyWorking) {
-      alert(
-        "You're already working on another requirement. Please free it to start working on this one."
-      );
+    if (!isAlreadyAssigned && assignedUsers.length >= 2) {
+      alert("Maximum 2 users already working on this requirement.");
       return;
     }
 
     try {
       await axios.put(`/api/requisitions/${row.requirementId}`, {
-        working: !row.working,
+        working: !isAlreadyAssigned,
         userName: currentUser,
       });
     } catch (err) {
@@ -135,8 +133,10 @@ function Table({ currentUser }) {
     }
   };
 
-  const isLockedByOther = (row) =>
-    row.working && row.assignedRecruiter && row.assignedRecruiter !== currentUser;
+  const isLockedByOther = (row) => {
+    const assignedUsers = row.assigned_recruiters || [];
+    return assignedUsers.length >= 2 && !assignedUsers.includes(currentUser);
+  };
 
   const handleSort = (key) => {
     setSortConfig((prev) => {
@@ -179,7 +179,7 @@ function Table({ currentUser }) {
               </th>
             ))}
             <th>Slots</th>
-            <th>Assigned Recruiter</th>
+            <th>Assigned Recruiters</th>
             <th>Working</th>
           </tr>
           <tr>
@@ -202,6 +202,8 @@ function Table({ currentUser }) {
         <tbody>
           {sortedRows.map((row) => {
             const locked = isLockedByOther(row);
+            const assignedUsers = row.assigned_recruiters || [];
+            const workingTimes = row.working_times || {};
 
             return (
               <tr
@@ -209,7 +211,7 @@ function Table({ currentUser }) {
                 className={`animated-row ${
                   locked
                     ? "locked"
-                    : row.working && row.assignedRecruiter === currentUser
+                    : assignedUsers.includes(currentUser)
                     ? "working-current"
                     : ""
                 }`}
@@ -225,7 +227,6 @@ function Table({ currentUser }) {
                       ? row.slots ?? 0
                       : row[field] ?? "";
 
-                  // ----------- Updated requirementId input -------------
                   if (field === "requirementId") {
                     return (
                       <td key={field}>
@@ -274,7 +275,6 @@ function Table({ currentUser }) {
                     );
                   }
 
-                  // ----------- Other fields (existing logic) -------------
                   return (
                     <td key={field}>
                       {field === "status" ? (
@@ -300,16 +300,6 @@ function Table({ currentUser }) {
                             onChange={(e) => {
                               if (field === "slots") {
                                 const newValue = Number(e.target.value);
-                                if (
-                                  row.working &&
-                                  row.assignedRecruiter === currentUser &&
-                                  newValue === 0
-                                ) {
-                                  alert(
-                                    "Cannot set Slots to 0 while you are working on this requirement."
-                                  );
-                                  return;
-                                }
                                 handleFieldChange(row.requirementId, field, newValue);
                               } else {
                                 handleFieldChange(row.requirementId, field, e.target.value);
@@ -336,8 +326,12 @@ function Table({ currentUser }) {
                 })}
 
                 <td>
-                  {row.working
-                    ? row.assignedRecruiter || ""
+                  {assignedUsers.length > 0
+                    ? assignedUsers.map((user) => (
+                        <div key={user}>
+                          {user} {workingTimes[user] ? `(${new Date(workingTimes[user]).toLocaleTimeString()})` : ""}
+                        </div>
+                      ))
                     : row.status !== "Open" || row.slots <= 0
                     ? "Non-Workable"
                     : ""}
@@ -345,12 +339,8 @@ function Table({ currentUser }) {
                 <td>
                   <input
                     type="checkbox"
-                    checked={Boolean(row.working && row.assignedRecruiter === currentUser)}
-                    disabled={
-                      row.status !== "Open" ||
-                      row.slots <= 0 ||
-                      (row.working && row.assignedRecruiter !== currentUser)
-                    }
+                    checked={assignedUsers.includes(currentUser)}
+                    disabled={locked}
                     onChange={() => toggleWorking(row)}
                   />
                 </td>
