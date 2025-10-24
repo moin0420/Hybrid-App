@@ -1,12 +1,11 @@
 {
   "name": "hybrid-app-backend",
   "version": "1.0.0",
-  "type": "module",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "build-frontend": "cd ../frontend && npm install && npm run build && mkdir -p ../backend/frontend && cp -r build/* ../backend/frontend/",
-    "heroku-postbuild": "npm run build-frontend"
+    "build-frontend": "cd ../frontend && npm install && npm run build && rm -rf ../backend/frontend && mkdir -p ../backend/frontend && cp -r build/* ../backend/frontend/",
+    "deploy": "npm run build-frontend && node app.js"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -18,5 +17,6 @@
   },
   "engines": {
     "node": "20.x"
-  }
+  },
+  "type": "module"
 }
