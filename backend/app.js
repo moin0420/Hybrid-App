@@ -23,7 +23,7 @@ const io = new Server(server, {
 app.use(cors());
 app.use(bodyParser.json());
 
-// ✅ Use Render-hosted PostgreSQL connection string (DB_URL from .env)
+// ✅ Render-hosted PostgreSQL connection
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: { rejectUnauthorized: false },
@@ -37,9 +37,7 @@ const connectWithRetry = async (retries = 5, delay = 5000) => {
       console.log("✅ Connected to PostgreSQL");
       return;
     } catch (err) {
-      console.error(
-        `❌ Database connection failed (attempt ${attempt}/${retries})`
-      );
+      console.error(`❌ Database connection failed (attempt ${attempt}/${retries})`);
       if (attempt === retries) throw err;
       await new Promise((res) => setTimeout(res, delay));
     }
@@ -82,9 +80,7 @@ io.on("connection", (socket) => {
 // Fetch all requisitions
 app.get("/api/requisitions", async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT * FROM requisitions ORDER BY requirementid ASC"
-    );
+    const result = await pool.query("SELECT * FROM requisitions ORDER BY requirementid ASC");
     res.json(result.rows);
   } catch (err) {
     console.error("❌ Error fetching requisitions:", err);
@@ -96,7 +92,7 @@ app.get("/api/requisitions", async (req, res) => {
 app.post("/api/requisitions", async (req, res) => {
   try {
     const { title, client, slots, status } = req.body;
-    const newReqId = `REQ-${Date.now()}`; // ✅ Unique ID
+    const newReqId = `REQ-${Date.now()}`;
 
     const result = await pool.query(
       `INSERT INTO requisitions (requirementid, title, client, slots, status, assigned_recruiters, working_times)
@@ -126,7 +122,6 @@ app.put("/api/requisitions/:id", async (req, res) => {
 
     const assigned = rows[0].assigned_recruiters || [];
 
-    // Block status or slots update if recruiters are working
     if (assigned.length > 0 && ("status" in fields || "slots" in fields)) {
       return res.status(400).json({
         message:
@@ -134,13 +129,10 @@ app.put("/api/requisitions/:id", async (req, res) => {
       });
     }
 
-    // Build update query
     const keys = Object.keys(fields);
     if (!keys.length) return res.json({ message: "No changes" });
 
-    const setClauses = keys.map(
-      (key, i) => `${key.toLowerCase()}=$${i + 1}`
-    );
+    const setClauses = keys.map((key, i) => `${key.toLowerCase()}=$${i + 1}`);
     const values = Object.values(fields);
 
     const updateQuery = `
@@ -160,9 +152,9 @@ app.put("/api/requisitions/:id", async (req, res) => {
 });
 
 // ===== SERVE FRONTEND =====
-app.use(express.static(path.join(__dirname, "frontend/build")));
+app.use(express.static(path.join(__dirname, "frontend")));
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend/build", "index.html"));
+  res.sendFile(path.join(__dirname, "frontend", "index.html"));
 });
 
 // ===== START SERVER =====

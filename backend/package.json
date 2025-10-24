@@ -4,8 +4,9 @@
   "type": "module",
   "main": "app.js",
   "scripts": {
-    "build-frontend": "cd ../frontend && npm install && npm run build && mkdir -p ./frontend && cp -r build/* ../backend/frontend/",
-    "start": "npm run build-frontend && node app.js"
+    "start": "node app.js",
+    "build-frontend": "cd ../frontend && npm install && npm run build && mkdir -p ../backend/frontend && cp -r build/* ../backend/frontend/",
+    "heroku-postbuild": "npm run build-frontend"
   },
   "dependencies": {
     "express": "^4.18.2",
