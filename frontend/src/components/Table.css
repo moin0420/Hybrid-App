@@ -1,0 +1,230 @@
+/* === Table Container === */
+.p-4 {
+  padding: 1rem;
+}
+
+h2 {
+  font-weight: 600;
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+/* === Table Wrapper for scroll === */
+.table-wrapper {
+  max-height: 600px; /* adjust as needed */
+  overflow-y: auto;
+  position: relative;
+}
+
+/* === Base Table === */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+th,
+td {
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  font-size: 14px;
+  color: #1e293b;
+  vertical-align: middle;
+  text-align: left;
+  position: relative;
+}
+
+thead {
+  background-color: #f1f5f9;
+}
+
+/* === Sticky Header + Filters === */
+thead.sticky-header tr {
+  display: table-row;
+}
+
+thead.sticky-header th {
+  position: sticky;
+  top: 0;
+  background-color: #f1f5f9;
+  z-index: 10;
+}
+
+/* Make filter row just below header sticky as well */
+thead.sticky-header .filters-row th {
+  top: 40px; /* height of header row */
+  background-color: #f8fafc;
+  z-index: 9;
+  padding: 4px 8px;
+}
+
+.filter-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid #cbd5e1;
+  font-size: 13px;
+}
+
+/* === Alternate Row Shading === */
+tbody tr:nth-child(even) {
+  background-color: #f9fafb;
+}
+
+/* === Non-Workable Rows === */
+tbody tr.non-workable,
+td:has(> .non-workable) {
+  background-color: #fff1f0;
+  color: #b91c1c;
+}
+
+/* === Editable Inputs === */
+input[type="text"],
+input[type="number"],
+select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  transition: all 0.2s ease;
+  font-size: 13px;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+select:focus {
+  outline: none;
+  border-color: #6366f1;
+  background-color: #f0f4ff;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+/* === Checkbox === */
+input[type="checkbox"] {
+  transform: scale(1.25);
+  cursor: pointer;
+  accent-color: #4f46e5;
+}
+
+/* === Assigned Recruiters Section === */
+.flex {
+  display: flex;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
+.items-start {
+  align-items: flex-start;
+}
+
+.gap-2 {
+  gap: 0.5rem;
+}
+
+.text-xs {
+  font-size: 12px;
+}
+
+.text-gray-500 {
+  color: #6b7280;
+}
+
+.text-green-700 {
+  color: #047857;
+  font-weight: 600;
+}
+
+/* === Editing Indicator === */
+.text-blue-600 {
+  color: #2563eb;
+}
+
+.text-center {
+  text-align: center;
+}
+
+/* === Sorting Arrows === */
+th .th-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.resize-handle {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  height: 100%;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+/* === Pagination Buttons === */
+button {
+  border: 1px solid #cbd5e1;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background-color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+button:hover:not(:disabled) {
+  background-color: #f1f5f9;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.active {
+  background-color: #e2e8f0;
+}
+
+/* === Responsive Table === */
+@media (max-width: 768px) {
+  table,
+  thead,
+  tbody,
+  th,
+  td,
+  tr {
+    display: block;
+  }
+
+  tr {
+    margin-bottom: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px;
+    background: #ffffff;
+  }
+
+  td {
+    border: none;
+    padding: 4px 0;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #334155;
+  }
+
+  thead {
+    display: none;
+  }
+}

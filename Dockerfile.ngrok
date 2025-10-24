@@ -1,0 +1,10 @@
+FROM ngrok/ngrok:latest
+
+# Switch to root to install packages
+USER root
+
+# Install jq
+RUN apt-get update && apt-get install -y jq && rm -rf /var/lib/apt/lists/*
+
+# Switch back to default user for ngrok
+USER ngrok

@@ -1,0 +1,161 @@
+/* === Global Layout & Typography === */
+body {
+  margin: 0;
+  font-family: "Inter", sans-serif;
+  background-color: #f8faff;
+  color: #1e293b;
+  line-height: 1.5;
+}
+
+.p-6 {
+  padding: 1.5rem;
+}
+
+.min-h-screen {
+  min-height: 100vh;
+}
+
+.bg-gray-50 {
+  background-color: #f8fafc;
+}
+
+.text-gray-800 {
+  color: #1e293b;
+}
+
+/* === Header === */
+header {
+  margin-bottom: 1.5rem;
+}
+
+header h1 {
+  font-size: clamp(1.25rem, 2.5vw, 2rem);
+  font-weight: 700;
+  margin: 0 0 0.5rem 0;
+  color: #1e293b;
+}
+
+header .text-sm {
+  color: #475569;
+  font-size: 0.875rem;
+}
+
+header .font-semibold {
+  font-weight: 600;
+}
+
+/* === Add Requirement Form === */
+.flex {
+  display: flex;
+}
+
+.items-end {
+  align-items: flex-end;
+}
+
+.gap-2 {
+  gap: 0.5rem;
+}
+
+.mb-6 {
+  margin-bottom: 1.5rem;
+}
+
+.bg-white {
+  background-color: #ffffff;
+}
+
+.p-3 {
+  padding: 0.75rem;
+}
+
+.rounded-lg {
+  border-radius: 0.75rem;
+}
+
+.shadow {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* === Form Controls === */
+label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 0.25rem;
+}
+
+input,
+select {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+input:focus,
+select:focus {
+  border-color: #6366f1;
+  background-color: #f0f4ff;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+button {
+  background-color: #4f46e5;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+button:hover {
+  background-color: #4338ca;
+}
+
+/* === Utility === */
+.text-center {
+  text-align: center;
+}
+
+.text-sm {
+  font-size: 0.875rem;
+}
+
+.text-xs {
+  font-size: 0.75rem;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+/* === Responsive Tweaks === */
+@media (max-width: 768px) {
+  .flex {
+    flex-direction: column;
+  }
+
+  input,
+  select {
+    width: 100%;
+  }
+
+  button {
+    width: 100%;
+    margin-top: 0.5rem;
+  }
+
+  header h1 {
+    font-size: 1.25rem;
+  }
+}
