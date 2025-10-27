@@ -21,8 +21,6 @@ const Table = forwardRef((props, ref) => {
   const [filters, setFilters] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 20;
-
-  // Column widths & refs (for resizing)
   const [colWidths, setColWidths] = useState({});
   const thRefs = useRef({});
 
@@ -87,7 +85,6 @@ const Table = forwardRef((props, ref) => {
   const handleSave = async (reqId) => {
     const updatedFields = editing[reqId];
     if (!updatedFields) return;
-
     try {
       await axios.put(`/api/requisitions/${reqId}`, updatedFields);
       socket.emit("requisitions_updated");
@@ -238,6 +235,18 @@ const Table = forwardRef((props, ref) => {
     });
   };
 
+  // ✅ Format time to HH:MM local
+  const formatTime = (timeString) => {
+    if (!timeString) return "";
+    const date = new Date(timeString);
+    if (isNaN(date)) return "";
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true, // optional — shows AM/PM in local time
+    });
+  };
+
   return (
     <div className="p-4">
       <div className="flex justify-center mb-4">
@@ -276,7 +285,6 @@ const Table = forwardRef((props, ref) => {
                     )}
                   </div>
 
-                  {/* Filter input BELOW header */}
                   {col !== "working" && (
                     <input
                       placeholder="Filter..."
@@ -298,212 +306,11 @@ const Table = forwardRef((props, ref) => {
           <tbody>
             {paginatedRows.map((row) => {
               const assignedUsers = row.assigned_recruiters || [];
+              const workingTimes = row.working_times || {};
               const nonWorkable = isNonWorkable(row);
-              const editingUser = editingStatus[row.requirementid];
 
               return (
                 <tr key={row.requirementid}>
-                  {/* Rest of table rows remain unchanged */}
-                  {/* Req ID */}
-                  <td className="border p-1 text-center">
-                    <input
-                      type="text"
-                      className="w-full text-center border rounded"
-                      value={
-                        editing[row.requirementid]?.requirementid ??
-                        row.requirementid ??
-                        ""
-                      }
-                      onFocus={() =>
-                        socket.emit("editing_status", {
-                          requirementid: row.requirementid,
-                          field: "requirementid",
-                          user: currentUser,
-                        })
-                      }
-                      onBlur={() => {
-                        socket.emit("editing_status", {
-                          requirementid: row.requirementid,
-                          field: "requirementid",
-                          user: null,
-                        });
-                        handleSave(row.requirementid);
-                      }}
-                      onChange={(e) =>
-                        handleEdit(
-                          row.requirementid,
-                          "requirementid",
-                          e.target.value
-                        )
-                      }
-                    />
-                    {editingUser?.field === "requirementid" &&
-                      editingUser?.user !== currentUser && (
-                        <span className="text-xs text-blue-600">
-                          {editingUser.user} is editing...
-                        </span>
-                      )}
-                  </td>
-
-                  {/* Job Title */}
-                  <td className="border p-1">
-                    <input
-                      className="w-full"
-                      value={editing[row.requirementid]?.title ?? row.title ?? ""}
-                      onFocus={() =>
-                        socket.emit("editing_status", {
-                          requirementid: row.requirementid,
-                          field: "title",
-                          user: currentUser,
-                        })
-                      }
-                      onBlur={() => {
-                        socket.emit("editing_status", {
-                          requirementid: row.requirementid,
-                          field: "title",
-                          user: null,
-                        });
-                        handleSave(row.requirementid);
-                      }}
-                      onChange={(e) =>
-                        handleEdit(row.requirementid, "title", e.target.value)
-                      }
-                    />
-                    {editingUser?.field === "title" &&
-                      editingUser?.user !== currentUser && (
-                        <span className="text-xs text-blue-600">
-                          {editingUser.user} is editing...
-                        </span>
-                      )}
-                  </td>
-
-                  {/* Client */}
-                  <td className="border p-1">
-                    <input
-                      className="w-full"
-                      value={editing[row.requirementid]?.client ?? row.client ?? ""}
-                      onFocus={() =>
-                        socket.emit("editing_status", {
-                          requirementid: row.requirementid,
-                          field: "client",
-                          user: currentUser,
-                        })
-                      }
-                      onBlur={() => {
-                        socket.emit("editing_status", {
-                          requirementid: row.requirementid,
-                          field: "client",
-                          user: null,
-                        });
-                        handleSave(row.requirementid);
-                      }}
-                      onChange={(e) =>
-                        handleEdit(row.requirementid, "client", e.target.value)
-                      }
-                    />
-                    {editingUser?.field === "client" &&
-                      editingUser?.user !== currentUser && (
-                        <span className="text-xs text-blue-600">
-                          {editingUser.user} is editing...
-                        </span>
-                      )}
-                  </td>
-
-                  {/* Slots */}
-                  <td className="border p-1 text-center">
-                    <input
-                      type="number"
-                      min="0"
-                      value={editing[row.requirementid]?.slots ?? row.slots ?? 0}
-                      onFocus={() =>
-                        socket.emit("editing_status", {
-                          requirementid: row.requirementid,
-                          field: "slots",
-                          user: currentUser,
-                        })
-                      }
-                      onBlur={() => {
-                        socket.emit("editing_status", {
-                          requirementid: row.requirementid,
-                          field: "slots",
-                          user: null,
-                        });
-                        handleSave(row.requirementid);
-                      }}
-                      onChange={(e) => {
-                        const assignedUsers = row.assigned_recruiters || [];
-                        if (assignedUsers.includes(currentUser)) {
-                          revertFieldImmediate(row, "slots");
-                          alert(
-                            "Cannot change Slots while working on this requirement."
-                          );
-                          return;
-                        }
-                        const val = Number(e.target.value);
-                        handleEdit(
-                          row.requirementid,
-                          "slots",
-                          Number.isNaN(val) ? 0 : val
-                        );
-                      }}
-                      className="w-16 text-center"
-                      style={{ width: colWidths.slots || undefined }}
-                    />
-                    {editingUser?.field === "slots" &&
-                      editingUser?.user !== currentUser && (
-                        <span className="text-xs text-blue-600">
-                          {editingUser.user} is editing...
-                        </span>
-                      )}
-                  </td>
-
-                  {/* Status */}
-                  <td className="border p-1 text-center">
-                    <select
-                      value={editing[row.requirementid]?.status ?? row.status ?? ""}
-                      onFocus={() =>
-                        socket.emit("editing_status", {
-                          requirementid: row.requirementid,
-                          field: "status",
-                          user: currentUser,
-                        })
-                      }
-                      onBlur={() => {
-                        socket.emit("editing_status", {
-                          requirementid: row.requirementid,
-                          field: "status",
-                          user: null,
-                        });
-                        handleSave(row.requirementid);
-                      }}
-                      onChange={(e) => {
-                        const assignedUsers = row.assigned_recruiters || [];
-                        if (assignedUsers.includes(currentUser)) {
-                          revertFieldImmediate(row, "status");
-                          alert(
-                            "Cannot change Status while working on this requirement."
-                          );
-                          return;
-                        }
-                        handleEdit(row.requirementid, "status", e.target.value);
-                      }}
-                      className="border p-1"
-                      style={{ width: colWidths.status || undefined }}
-                    >
-                      <option>Open</option>
-                      <option>Closed</option>
-                      <option>Filled</option>
-                      <option>On Hold</option>
-                      <option>Cancelled</option>
-                    </select>
-                    {editingUser?.field === "status" &&
-                      editingUser?.user !== currentUser && (
-                        <span className="text-xs text-blue-600">
-                          {editingUser.user} is editing...
-                        </span>
-                      )}
-                  </td>
-
                   {/* Assigned Recruiters */}
                   <td className="border p-1 text-center">
                     {nonWorkable
@@ -512,7 +319,7 @@ const Table = forwardRef((props, ref) => {
                       ? assignedUsers.map((user) => (
                           <div
                             key={user}
-                            className="flex gap-2 items-center text-xs"
+                            className="flex flex-col items-center text-xs"
                           >
                             <span
                               className={
@@ -523,6 +330,11 @@ const Table = forwardRef((props, ref) => {
                             >
                               {user}
                             </span>
+                            {workingTimes[user] && (
+                              <span className="text-[10px] text-gray-500">
+                                {formatTime(workingTimes[user])}
+                              </span>
+                            )}
                           </div>
                         ))
                       : "-"}
@@ -543,36 +355,6 @@ const Table = forwardRef((props, ref) => {
           </tbody>
         </table>
       </div>
-
-      {totalPages > 1 && (
-        <div className="flex justify-center gap-2 mt-2">
-          <button
-            disabled={currentPage === 1}
-            onClick={() => setCurrentPage((p) => p - 1)}
-            className="border px-2 py-1 rounded disabled:opacity-50"
-          >
-            Prev
-          </button>
-          {[...Array(totalPages)].map((_, i) => (
-            <button
-              key={i}
-              className={`border px-2 py-1 rounded ${
-                currentPage === i + 1 ? "bg-gray-300" : ""
-              }`}
-              onClick={() => setCurrentPage(i + 1)}
-            >
-              {i + 1}
-            </button>
-          ))}
-          <button
-            disabled={currentPage === totalPages}
-            onClick={() => setCurrentPage((p) => p + 1)}
-            className="border px-2 py-1 rounded disabled:opacity-50"
-          >
-            Next
-          </button>
-        </div>
-      )}
     </div>
   );
 });
