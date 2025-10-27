@@ -24,7 +24,7 @@ const Table = forwardRef((props, ref) => {
   const [colWidths, setColWidths] = useState({});
   const thRefs = useRef({});
 
-  // === Init username ===
+  // === Initialize current user ===
   useEffect(() => {
     let user = localStorage.getItem("recruiterName");
     if (!user) {
@@ -48,7 +48,9 @@ const Table = forwardRef((props, ref) => {
 
   useEffect(() => {
     fetchRows();
+
     socket.on("requisitions_updated", fetchRows);
+
     socket.on("editing_status", (data) => {
       setEditingStatus((prev) => ({
         ...prev,
@@ -57,6 +59,7 @@ const Table = forwardRef((props, ref) => {
           : null,
       }));
     });
+
     return () => {
       socket.off("requisitions_updated");
       socket.off("editing_status");
@@ -75,7 +78,13 @@ const Table = forwardRef((props, ref) => {
 
   const isNonWorkable = (row) => row.status !== "Open" || row.slots === 0;
 
+  // === Handle edit and save ===
   const handleEdit = (reqId, field, value) => {
+    socket.emit("editing_status", {
+      requirementid: reqId,
+      user: currentUser,
+      field,
+    });
     setEditing((prev) => ({
       ...prev,
       [reqId]: { ...prev[reqId], [field]: value },
@@ -88,6 +97,11 @@ const Table = forwardRef((props, ref) => {
     try {
       await axios.put(`/api/requisitions/${reqId}`, updatedFields);
       socket.emit("requisitions_updated");
+      socket.emit("editing_status", {
+        requirementid: reqId,
+        user: null,
+        field: null,
+      });
       setEditing((prev) => {
         const copy = { ...prev };
         delete copy[reqId];
@@ -104,6 +118,7 @@ const Table = forwardRef((props, ref) => {
     }
   };
 
+  // === Working toggle ===
   const toggleWorking = async (row) => {
     if (!row.requirementid) return;
 
@@ -116,9 +131,7 @@ const Table = forwardRef((props, ref) => {
         r.requirementid !== row.requirementid
     );
     if (!isAssigned && alreadyWorking) {
-      alert(
-        "You are already working on another requirement. Please uncheck it first."
-      );
+      alert("You are already working on another requirement.");
       return;
     }
 
@@ -162,6 +175,7 @@ const Table = forwardRef((props, ref) => {
     );
   };
 
+  // === Sort + Filter ===
   const handleSort = (field) => {
     let direction = "ascending";
     if (sortConfig.field === field && sortConfig.direction === "ascending") {
@@ -205,6 +219,7 @@ const Table = forwardRef((props, ref) => {
     currentPage * rowsPerPage
   );
 
+  // === Column resize ===
   const startResize = (e, col) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -224,18 +239,7 @@ const Table = forwardRef((props, ref) => {
     document.addEventListener("mouseup", stopDrag);
   };
 
-  const revertFieldImmediate = (row, field) => {
-    setEditing((prev) => {
-      const copy = { ...prev };
-      if (!copy[row.requirementid]) return copy;
-      delete copy[row.requirementid][field];
-      if (Object.keys(copy[row.requirementid] || {}).length === 0)
-        delete copy[row.requirementid];
-      return copy;
-    });
-  };
-
-  // ✅ Format time to HH:MM local
+  // === Format Time ===
   const formatTime = (timeString) => {
     if (!timeString) return "";
     const date = new Date(timeString);
@@ -243,10 +247,11 @@ const Table = forwardRef((props, ref) => {
     return date.toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
-      hour12: true, // optional — shows AM/PM in local time
+      hour12: true,
     });
   };
 
+  // === Render ===
   return (
     <div className="p-4">
       <div className="flex justify-center mb-4">
@@ -304,54 +309,128 @@ const Table = forwardRef((props, ref) => {
           </thead>
 
           <tbody>
-            {paginatedRows.map((row) => {
-              const assignedUsers = row.assigned_recruiters || [];
-              const workingTimes = row.working_times || {};
-              const nonWorkable = isNonWorkable(row);
+            {paginatedRows.map((row) => (
+              <tr key={row.requirementid}>
+                {columns.map((col) => {
+                  if (col === "working") {
+                    const assignedUsers = row.assigned_recruiters || [];
+                    return (
+                      <td key={col} className="border p-1 text-center">
+                        <input
+                          type="checkbox"
+                          checked={assignedUsers.includes(currentUser)}
+                          onChange={() => toggleWorking(row)}
+                          disabled={disableCheckbox(row)}
+                        />
+                      </td>
+                    );
+                  }
 
-              return (
-                <tr key={row.requirementid}>
-                  {/* Assigned Recruiters */}
-                  <td className="border p-1 text-center">
-                    {nonWorkable
-                      ? "Non-Workable"
-                      : assignedUsers.length
-                      ? assignedUsers.map((user) => (
-                          <div
-                            key={user}
-                            className="flex flex-col items-center text-xs"
-                          >
-                            <span
-                              className={
-                                user === currentUser
-                                  ? "font-semibold text-green-700"
-                                  : ""
-                              }
-                            >
-                              {user}
-                            </span>
-                            {workingTimes[user] && (
-                              <span className="text-[10px] text-gray-500">
-                                {formatTime(workingTimes[user])}
-                              </span>
-                            )}
+                  if (col === "assigned_recruiters") {
+                    const assignedUsers = row.assigned_recruiters || [];
+                    const workingTimes = row.working_times || {};
+                    const nonWorkable = isNonWorkable(row);
+                    return (
+                      <td key={col} className="border p-1 text-center">
+                        {nonWorkable
+                          ? "Non-Workable"
+                          : assignedUsers.length
+                          ? assignedUsers.map((user) => (
+                              <div
+                                key={user}
+                                className="flex flex-col items-center text-xs"
+                              >
+                                <span
+                                  className={
+                                    user === currentUser
+                                      ? "font-semibold text-green-700"
+                                      : ""
+                                  }
+                                >
+                                  {user}
+                                </span>
+                                {workingTimes[user] && (
+                                  <span className="text-[10px] text-gray-500">
+                                    {formatTime(workingTimes[user])}
+                                  </span>
+                                )}
+                              </div>
+                            ))
+                          : "-"}
+                      </td>
+                    );
+                  }
+
+                  if (col === "status") {
+                    const val =
+                      editing[row.requirementid]?.[col] ?? row[col] ?? "";
+                    const editingUser = editingStatus[row.requirementid];
+                    const isEditingOther =
+                      editingUser &&
+                      editingUser.user !== currentUser &&
+                      editingUser.field === col;
+
+                    return (
+                      <td key={col} className="border p-1 text-center">
+                        {isEditingOther ? (
+                          <div className="text-xs text-orange-500 italic">
+                            {editingUser.user} editing...
                           </div>
-                        ))
-                      : "-"}
-                  </td>
+                        ) : (
+                          <select
+                            className="border rounded px-1 text-sm"
+                            value={val}
+                            onChange={(e) =>
+                              handleEdit(row.requirementid, col, e.target.value)
+                            }
+                            onBlur={() => handleSave(row.requirementid)}
+                          >
+                            {[
+                              "Open",
+                              "Closed",
+                              "On Hold",
+                              "Filled",
+                              "Cancelled",
+                            ].map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                    );
+                  }
 
-                  {/* Working */}
-                  <td className="border p-1 text-center">
-                    <input
-                      type="checkbox"
-                      checked={assignedUsers.includes(currentUser)}
-                      onChange={() => toggleWorking(row)}
-                      disabled={disableCheckbox(row)}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
+                  const val =
+                    editing[row.requirementid]?.[col] ?? row[col] ?? "";
+                  const editingUser = editingStatus[row.requirementid];
+                  const isEditingOther =
+                    editingUser &&
+                    editingUser.user !== currentUser &&
+                    editingUser.field === col;
+
+                  return (
+                    <td key={col} className="border p-1 text-center">
+                      {isEditingOther ? (
+                        <div className="text-xs text-orange-500 italic">
+                          {editingUser.user} editing...
+                        </div>
+                      ) : (
+                        <input
+                          className="border rounded px-1 text-sm w-full"
+                          value={val}
+                          onChange={(e) =>
+                            handleEdit(row.requirementid, col, e.target.value)
+                          }
+                          onBlur={() => handleSave(row.requirementid)}
+                        />
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

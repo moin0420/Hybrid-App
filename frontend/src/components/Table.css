@@ -88,6 +88,10 @@ tbody tr:nth-child(even) {
   background-color: #f9fafb;
 }
 
+tbody tr:hover {
+  background-color: #f1f5f9;
+}
+
 /* === Non-Workable Rows === */
 tbody tr.non-workable,
 td:has(> .non-workable) {
@@ -175,6 +179,32 @@ input[type="checkbox"] {
   top: 0;
 }
 
+/* === Status Color Coding === */
+.status-open {
+  color: #047857;
+  font-weight: 600;
+}
+
+.status-closed {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.status-onhold {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.status-filled {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.status-cancelled {
+  color: #6b7280;
+  font-weight: 600;
+}
+
 /* === Pagination Buttons === */
 button {
   border: 1px solid #cbd5e1;
@@ -233,4 +263,49 @@ button.active {
   thead {
     display: none;
   }
+}
+
+/* === Status Cell Coloring === */
+.status-open {
+  background-color: #dcfce7 !important;
+  color: #166534 !important;
+}
+
+.status-closed {
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+}
+
+.status-hold {
+  background-color: #fef9c3 !important;
+  color: #92400e !important;
+}
+
+.status-filled {
+  background-color: #e0f2fe !important;
+  color: #0369a1 !important;
+}
+
+.status-cancelled {
+  background-color: #f3f4f6 !important;
+  color: #374151 !important;
+}
+
+.assigned-recruiter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.assigned-recruiter span:first-child {
+  font-weight: 500;
+  color: #111827;
+}
+
+.assigned-recruiter .time {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
 }
