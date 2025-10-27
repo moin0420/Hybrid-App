@@ -23,13 +23,13 @@ const io = new Server(server, {
 app.use(cors());
 app.use(bodyParser.json());
 
-// ✅ Render-hosted PostgreSQL connection
+// PostgreSQL connection using Render DB_URL
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// --- Retry connection until DB is ready ---
+// Retry connection until DB is ready
 const connectWithRetry = async (retries = 5, delay = 5000) => {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -37,14 +37,16 @@ const connectWithRetry = async (retries = 5, delay = 5000) => {
       console.log("✅ Connected to PostgreSQL");
       return;
     } catch (err) {
-      console.error(`❌ Database connection failed (attempt ${attempt}/${retries})`);
+      console.error(
+        `❌ Database connection failed (attempt ${attempt}/${retries})`
+      );
       if (attempt === retries) throw err;
       await new Promise((res) => setTimeout(res, delay));
     }
   }
 };
 
-// --- Ensure table exists ---
+// Ensure table exists
 const ensureTable = async () => {
   const query = `
     CREATE TABLE IF NOT EXISTS requisitions (
@@ -76,11 +78,11 @@ io.on("connection", (socket) => {
 });
 
 // ===== ROUTES =====
-
-// Fetch all requisitions
 app.get("/api/requisitions", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM requisitions ORDER BY requirementid ASC");
+    const result = await pool.query(
+      "SELECT * FROM requisitions ORDER BY requirementid ASC"
+    );
     res.json(result.rows);
   } catch (err) {
     console.error("❌ Error fetching requisitions:", err);
@@ -88,7 +90,6 @@ app.get("/api/requisitions", async (req, res) => {
   }
 });
 
-// Add new row
 app.post("/api/requisitions", async (req, res) => {
   try {
     const { title, client, slots, status } = req.body;
@@ -108,7 +109,6 @@ app.post("/api/requisitions", async (req, res) => {
   }
 });
 
-// Update row
 app.put("/api/requisitions/:id", async (req, res) => {
   const { id } = req.params;
   const fields = req.body;

@@ -1,0 +1,14 @@
+{
+  "build": {
+    "builder": "nodejs",
+    "buildCommand": "npm install && npm run deploy",
+    "startCommand": "npm run deploy",
+    "rootDirectory": "backend"
+  },
+  "env": {
+    "DB_URL": {
+      "required": true,
+      "description": "Your PostgreSQL connection string from Render"
+    }
+  }
+}
