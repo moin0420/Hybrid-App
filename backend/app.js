@@ -23,7 +23,7 @@ const io = new Server(server, {
 app.use(cors());
 app.use(bodyParser.json());
 
-// PostgreSQL connection using Render DB_URL
+// PostgreSQL connection
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: { rejectUnauthorized: false },
@@ -92,13 +92,24 @@ app.get("/api/requisitions", async (req, res) => {
 
 app.post("/api/requisitions", async (req, res) => {
   try {
-    const { title, client, slots, status } = req.body;
-    const newReqId = `REQ-${Date.now()}`;
+    let { requirementid, title, client, slots, status } = req.body;
+    if (!requirementid) {
+      requirementid = `REQ-${Date.now()}`;
+    }
+
+    // Ensure unique requirement ID
+    const exists = await pool.query(
+      "SELECT requirementid FROM requisitions WHERE requirementid = $1",
+      [requirementid]
+    );
+    if (exists.rows.length > 0) {
+      return res.status(400).json({ message: "Requirement ID already exists." });
+    }
 
     const result = await pool.query(
       `INSERT INTO requisitions (requirementid, title, client, slots, status, assigned_recruiters, working_times)
        VALUES ($1, $2, $3, $4, $5, '{}', '{}') RETURNING *`,
-      [newReqId, title || "", client || "", slots || 1, status || "Open"]
+      [requirementid, title || "", client || "", slots || 1, status || "Open"]
     );
 
     io.emit("requisitions_updated");

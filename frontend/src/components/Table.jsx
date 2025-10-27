@@ -23,6 +23,13 @@ const Table = forwardRef((props, ref) => {
   const rowsPerPage = 20;
   const [colWidths, setColWidths] = useState({});
   const thRefs = useRef({});
+  const [newReq, setNewReq] = useState({
+    requirementid: "",
+    title: "",
+    client: "",
+    slots: "",
+    status: "Open",
+  });
 
   // === Initialize current user ===
   useEffect(() => {
@@ -48,9 +55,7 @@ const Table = forwardRef((props, ref) => {
 
   useEffect(() => {
     fetchRows();
-
     socket.on("requisitions_updated", fetchRows);
-
     socket.on("editing_status", (data) => {
       setEditingStatus((prev) => ({
         ...prev,
@@ -59,7 +64,6 @@ const Table = forwardRef((props, ref) => {
           : null,
       }));
     });
-
     return () => {
       socket.off("requisitions_updated");
       socket.off("editing_status");
@@ -118,13 +122,33 @@ const Table = forwardRef((props, ref) => {
     }
   };
 
+  // === Add new requisition ===
+  const handleAddRequisition = async () => {
+    if (!newReq.requirementid.trim()) {
+      alert("Please enter a Requirement ID");
+      return;
+    }
+    try {
+      await axios.post("/api/requisitions", newReq);
+      setNewReq({
+        requirementid: "",
+        title: "",
+        client: "",
+        slots: "",
+        status: "Open",
+      });
+      socket.emit("requisitions_updated");
+      fetchRows();
+    } catch (err) {
+      alert(err.response?.data?.message || "Error adding requisition");
+    }
+  };
+
   // === Working toggle ===
   const toggleWorking = async (row) => {
     if (!row.requirementid) return;
-
     const assignedUsers = row.assigned_recruiters || [];
     const isAssigned = assignedUsers.includes(currentUser);
-
     const alreadyWorking = rows.find(
       (r) =>
         (r.assigned_recruiters || []).includes(currentUser) &&
@@ -134,20 +158,16 @@ const Table = forwardRef((props, ref) => {
       alert("You are already working on another requirement.");
       return;
     }
-
     if (!isAssigned && assignedUsers.length >= 2) {
       alert("Two recruiters are already working on this requirement.");
       return;
     }
-
     const newAssigned = isAssigned
       ? assignedUsers.filter((u) => u !== currentUser)
       : [...assignedUsers, currentUser];
-
     const newWorkingTimes = { ...(row.working_times || {}) };
     if (isAssigned) delete newWorkingTimes[currentUser];
     else newWorkingTimes[currentUser] = new Date();
-
     try {
       await axios.put(`/api/requisitions/${row.requirementid}`, {
         assigned_recruiters: newAssigned,
@@ -224,17 +244,14 @@ const Table = forwardRef((props, ref) => {
     e.preventDefault();
     const startX = e.clientX;
     const startWidth = thRefs.current[col]?.offsetWidth || 100;
-
     const doDrag = (event) => {
       const newWidth = Math.max(40, startWidth + event.clientX - startX);
       setColWidths((prev) => ({ ...prev, [col]: newWidth }));
     };
-
     const stopDrag = () => {
       document.removeEventListener("mousemove", doDrag);
       document.removeEventListener("mouseup", stopDrag);
     };
-
     document.addEventListener("mousemove", doDrag);
     document.addEventListener("mouseup", stopDrag);
   };
@@ -256,6 +273,59 @@ const Table = forwardRef((props, ref) => {
     <div className="p-4">
       <div className="flex justify-center mb-4">
         <h2 className="font-bold text-lg">Requirements List</h2>
+      </div>
+
+      {/* === Add new requisition form === */}
+      <div className="flex gap-2 mb-4">
+        <input
+          type="text"
+          placeholder="Requirement ID"
+          value={newReq.requirementid}
+          onChange={(e) =>
+            setNewReq({ ...newReq, requirementid: e.target.value })
+          }
+          className="border rounded px-2 py-1 text-sm"
+        />
+        <input
+          type="text"
+          placeholder="Title"
+          value={newReq.title}
+          onChange={(e) => setNewReq({ ...newReq, title: e.target.value })}
+          className="border rounded px-2 py-1 text-sm"
+        />
+        <input
+          type="text"
+          placeholder="Client"
+          value={newReq.client}
+          onChange={(e) => setNewReq({ ...newReq, client: e.target.value })}
+          className="border rounded px-2 py-1 text-sm"
+        />
+        <input
+          type="number"
+          placeholder="Slots"
+          value={newReq.slots}
+          onChange={(e) => setNewReq({ ...newReq, slots: e.target.value })}
+          className="border rounded px-2 py-1 text-sm w-20"
+        />
+        <select
+          value={newReq.status}
+          onChange={(e) => setNewReq({ ...newReq, status: e.target.value })}
+          className={`border rounded px-2 py-1 text-sm status-${newReq.status
+            .toLowerCase()
+            .replace(/\s/g, "")}`}
+        >
+          {["Open", "Closed", "On Hold", "Filled", "Cancelled"].map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={handleAddRequisition}
+          className="bg-blue-500 text-white px-3 py-1 rounded"
+        >
+          Add
+        </button>
       </div>
 
       <div className="table-wrapper">
@@ -289,7 +359,6 @@ const Table = forwardRef((props, ref) => {
                       </span>
                     )}
                   </div>
-
                   {col !== "working" && (
                     <input
                       placeholder="Filter..."
@@ -298,7 +367,6 @@ const Table = forwardRef((props, ref) => {
                       onChange={(e) => handleFilter(col, e.target.value)}
                     />
                   )}
-
                   <div
                     className="resize-handle"
                     onMouseDown={(e) => startResize(e, col)}
@@ -307,7 +375,6 @@ const Table = forwardRef((props, ref) => {
               ))}
             </tr>
           </thead>
-
           <tbody>
             {paginatedRows.map((row) => (
               <tr key={row.requirementid}>
@@ -369,9 +436,13 @@ const Table = forwardRef((props, ref) => {
                       editingUser &&
                       editingUser.user !== currentUser &&
                       editingUser.field === col;
-
                     return (
-                      <td key={col} className="border p-1 text-center">
+                      <td
+                        key={col}
+                        className={`border p-1 text-center status-${val
+                          .toLowerCase()
+                          .replace(/\s/g, "")}`}
+                      >
                         {isEditingOther ? (
                           <div className="text-xs text-orange-500 italic">
                             {editingUser.user} editing...
