@@ -21,12 +21,12 @@ const Table = forwardRef((props, ref) => {
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 20;
   const [colWidths, setColWidths] = useState({
-    requirementid: 130,
-    title: 240,
+    requirementid: 150,
+    title: 250,
     client: 120,
     slots: 60,
-    status: 120,
-    assigned_recruiters: 150,
+    status: 100,
+    assigned_recruiters: 140,
     working: 100,
   });
   const thRefs = useRef({});
@@ -52,30 +52,27 @@ const Table = forwardRef((props, ref) => {
   useImperativeHandle(ref, () => ({ fetchRows }));
 
   useEffect(() => {
-  fetchRows();
-
-  // 🔄 Listen for real-time editing status updates
-  socket.on("editing_status", (data) => {
-    setEditingStatus((prev) => {
-      const updated = { ...prev };
-      const { requirementid, user, field } = data;
-      if (!user || !field) delete updated[requirementid];
-      else updated[requirementid] = { user, field };
-      return updated;
-    });
-  });
-
-  // 🔄 Listen for DB updates (from any user)
-  socket.on("requisitions_updated", () => {
     fetchRows();
-  });
 
-  // 🧹 Cleanup
-  return () => {
-    socket.off("requisitions_updated");
-    socket.off("editing_status");
-  };
-}, []);
+    socket.on("editing_status", (data) => {
+      setEditingStatus((prev) => {
+        const updated = { ...prev };
+        const { requirementid, user, field } = data;
+        if (!user || !field) delete updated[requirementid];
+        else updated[requirementid] = { user, field };
+        return updated;
+      });
+    });
+
+    socket.on("requisitions_updated", () => {
+      fetchRows();
+    });
+
+    return () => {
+      socket.off("requisitions_updated");
+      socket.off("editing_status");
+    };
+  }, []);
 
   const columns = [
     "requirementid",
@@ -90,20 +87,6 @@ const Table = forwardRef((props, ref) => {
   const isNonWorkable = (row) => row.status !== "Open" || row.slots === 0;
 
   const handleEdit = (reqId, field, value) => {
-    if (value === "" || value === null) {
-      socket.emit("editing_status", {
-        requirementid: reqId,
-        user: null,
-        field: null,
-      });
-      setEditing((prev) => {
-        const copy = { ...prev };
-        if (copy[reqId]) delete copy[reqId][field];
-        return copy;
-      });
-      return;
-    }
-
     socket.emit("editing_status", {
       requirementid: reqId,
       user: currentUser,
@@ -119,14 +102,33 @@ const Table = forwardRef((props, ref) => {
   const handleSave = async (reqId) => {
     const updatedFields = editing[reqId];
     if (!updatedFields) return;
+
+    // Prevent saving completely blank or undefined values
+    const cleanedFields = Object.fromEntries(
+      Object.entries(updatedFields).filter(
+        ([, val]) => val !== undefined && val !== null && val !== ""
+      )
+    );
+
     try {
-      await axios.put(`/api/requisitions/${reqId}`, updatedFields);
+      await axios.put(`/api/requisitions/${reqId}`, cleanedFields);
+
+      // ✅ Immediately update UI (no waiting for socket)
+      setRows((prevRows) =>
+        prevRows.map((r) =>
+          r.requirementid === reqId ? { ...r, ...cleanedFields } : r
+        )
+      );
+
+      // ✅ Ensure everyone else gets the update
+      await fetchRows();
       socket.emit("requisitions_updated");
       socket.emit("editing_status", {
         requirementid: reqId,
         user: null,
         field: null,
       });
+
       setEditing((prev) => {
         const copy = { ...prev };
         delete copy[reqId];
@@ -331,7 +333,7 @@ const Table = forwardRef((props, ref) => {
           <tbody>
             {paginatedRows.map((row) => {
               const recruiters = row.assigned_recruiters || [];
-              const someoneWorking = recruiters.length > 0; // 🔒 detect active workers
+              const someoneWorking = recruiters.length > 0;
 
               return (
                 <tr key={row.requirementid}>
@@ -415,7 +417,7 @@ const Table = forwardRef((props, ref) => {
                                 )
                               }
                               onBlur={() => handleSave(row.requirementid)}
-                              disabled={someoneWorking} // 🔒 disable when recruiters assigned
+                              disabled={someoneWorking}
                             >
                               {[
                                 "Open",
@@ -460,7 +462,7 @@ const Table = forwardRef((props, ref) => {
                               )
                             }
                             onBlur={() => handleSave(row.requirementid)}
-                            disabled={col === "slots" && someoneWorking} // 🔒 disable slots if recruiters assigned
+                            disabled={col === "slots" && someoneWorking}
                           />
                         )}
                       </td>

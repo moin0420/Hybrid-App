@@ -23,7 +23,7 @@ const io = new Server(server, {
 app.use(cors());
 app.use(bodyParser.json());
 
-// PostgreSQL connection
+// ===== DATABASE CONNECTION =====
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: { rejectUnauthorized: false },
@@ -65,24 +65,22 @@ const ensureTable = async () => {
 };
 
 // ===== SOCKET.IO HANDLING =====
-const activeEditors = new Map(); // { req_id: { user: name, column: col, socket: id } }
+const activeEditors = new Map(); // { req_id: { user, column, socket } }
 
 io.on("connection", (socket) => {
   console.log("🔌 Client connected:", socket.id);
 
-  // When user starts editing a cell
+  // When user starts/stops editing a field
   socket.on("editing_status", (data) => {
     const { req_id, column, isEditing, user } = data;
 
     if (isEditing) {
-      // Mark row as being edited
       activeEditors.set(req_id, { user, column, socket: socket.id });
     } else {
-      // Stop editing
       activeEditors.delete(req_id);
     }
 
-    // Broadcast update to all *other* clients
+    // Broadcast edit lock state to all others
     socket.broadcast.emit("editing_status", {
       req_id,
       column,
@@ -91,11 +89,15 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Cleanup when user disconnects
+  // When one user updates a requisition, notify all others
+  socket.on("req_updated", (updatedRow) => {
+    socket.broadcast.emit("req_updated", updatedRow);
+  });
+
+  // Clean up on disconnect
   socket.on("disconnect", () => {
     console.log("❌ Client disconnected:", socket.id);
 
-    // Remove any "editing" markers belonging to this user
     for (const [req_id, editor] of activeEditors.entries()) {
       if (editor.socket === socket.id) {
         activeEditors.delete(req_id);
@@ -125,50 +127,39 @@ app.get("/api/requisitions", async (req, res) => {
   }
 });
 
-// Create a new requisition (strict ID requirement)
+// Create new requisition
 app.post("/api/requisitions", async (req, res) => {
   try {
-    let {
-      requirementid,
-      requirementId,
-      title,
-      client,
-      slots,
-      status,
-    } = req.body;
-
-    // Normalize key name
+    let { requirementid, requirementId, title, client, slots, status } = req.body;
     requirementid = requirementid || requirementId;
 
-    // 🔹 REQUIREMENT ID IS MANDATORY
     if (!requirementid || requirementid.trim() === "") {
       return res
         .status(400)
         .json({ message: "Requirement ID is mandatory to create a new row." });
     }
 
-    // 🔹 Ensure unique requirement ID
+    // Ensure unique requirement ID
     const exists = await pool.query(
       "SELECT requirementid FROM requisitions WHERE requirementid = $1",
       [requirementid]
     );
     if (exists.rows.length > 0) {
-      return res
-        .status(400)
-        .json({ message: "Requirement ID already exists." });
+      return res.status(400).json({ message: "Requirement ID already exists." });
     }
 
-    // 🔹 Insert row
+    // Insert new row
     const result = await pool.query(
       `INSERT INTO requisitions (requirementid, title, client, slots, status, assigned_recruiters, working_times)
        VALUES ($1, $2, $3, $4, $5, '{}', '{}') RETURNING *`,
       [requirementid, title || "", client || "", slots || 1, status || "Open"]
     );
 
-    io.emit("requisitions_updated");
-    res.json(result.rows[0]);
+    const newRow = result.rows[0];
+    io.emit("req_updated", newRow); // realtime sync
+    res.json(newRow);
   } catch (err) {
-    console.error("❌ Error adding row:", err);
+    console.error("❌ Error adding requisition:", err);
     res.status(500).send("Error adding requisition");
   }
 });
@@ -187,10 +178,11 @@ app.put("/api/requisitions/:id", async (req, res) => {
 
     const assigned = rows[0].assigned_recruiters || [];
 
+    // Prevent changing locked fields
     if (assigned.length > 0 && ("status" in fields || "slots" in fields)) {
       return res.status(400).json({
         message:
-          "A Recruiter is working on this req. Please ask them to stop working and try changing again",
+          "A Recruiter is working on this req. Please ask them to stop working and try again.",
       });
     }
 
@@ -208,8 +200,9 @@ app.put("/api/requisitions/:id", async (req, res) => {
     `;
     const result = await pool.query(updateQuery, [...values, id]);
 
-    io.emit("requisitions_updated");
-    res.json(result.rows[0]);
+    const updatedRow = result.rows[0];
+    io.emit("req_updated", updatedRow); // broadcast live update
+    res.json(updatedRow);
   } catch (err) {
     console.error("❌ Error updating requisition:", err);
     res.status(500).send("Error updating requisition");
