@@ -12,14 +12,16 @@ h2 {
 
 /* === Table Container === */
 .table-wrapper {
-  max-height: 600px;
+  width: 100%;
+  max-height: 650px;
   overflow-y: auto;
   overflow-x: hidden;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid #cbd5e1;
   background: #ffffff;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
   position: relative;
+  padding: 0.5rem 0.75rem; /* ✅ soft padding around table */
 }
 
 /* === Base Table === */
@@ -27,7 +29,7 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  table-layout: auto !important; /* ✅ allow dynamic resizing */
+  table-layout: auto !important;
   transition: all 0.2s ease-in-out;
   word-wrap: break-word;
   overflow-wrap: break-word;
@@ -36,16 +38,14 @@ table {
 /* === Table Headers & Cells === */
 th,
 td {
-  padding: 6px 8px;
+  padding: 8px 10px;
   border-bottom: 1px solid #e2e8f0;
   text-align: left;
   color: #1e293b;
   vertical-align: middle;
-  user-select: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  word-break: break-word;
   transition: width 0.15s ease-in-out;
   box-sizing: border-box;
 }
@@ -100,7 +100,6 @@ th:hover .resize-handle {
   background-color: rgba(0, 0, 0, 0.1);
 }
 
-/* === While resizing === */
 body.resizing {
   cursor: col-resize;
   user-select: none;
@@ -110,7 +109,7 @@ body.resizing {
 .table-input,
 .status-select,
 .editable-input {
-  width: 100% !important; /* ✅ auto fits column width */
+  width: 100% !important; /* ✅ fits column dynamically */
   max-width: 100%;
   border: 1px solid #cbd5e1;
   border-radius: 4px;

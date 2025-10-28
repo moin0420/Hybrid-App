@@ -13,9 +13,8 @@ function App() {
     slots: 1,
     status: "Open",
   });
-  const [error, setError] = useState(""); // 🆕 For error message
+  const [error, setError] = useState("");
 
-  // === Ask user name on first visit ===
   useEffect(() => {
     let user = localStorage.getItem("recruiterName");
     if (!user) {
@@ -25,7 +24,6 @@ function App() {
     setCurrentUser(user || "Anonymous");
   }, []);
 
-  // === Add new requisition ===
   const handleAddRow = async () => {
     if (
       !newReq.requirementId.trim() ||
@@ -33,7 +31,7 @@ function App() {
       !newReq.client.trim()
     ) {
       setError("Please enter Requirement ID, Job Title, and Client name");
-      setTimeout(() => setError(""), 4000); // 🕓 Auto-clear after 4 sec
+      setTimeout(() => setError(""), 4000);
       return;
     }
 
@@ -55,15 +53,18 @@ function App() {
   };
 
   return (
-    <div className="p-6 min-h-screen bg-gray-50 text-gray-800">
+    <>
       <header className="mb-4">
         <div className="text-sm text-gray-600">
           Logged in as: <span className="font-semibold">{currentUser}</span>
         </div>
       </header>
 
-      {/* 🆕 Error Message */}
-      {error && <div className={`error-message ${error ? "" : "fade-out"}`}>{error}</div>}
+      {error && (
+        <div className={`error-message ${error ? "" : "fade-out"}`}>
+          {error}
+        </div>
+      )}
 
       <div className="add-req-container">
         <div>
@@ -138,8 +139,11 @@ function App() {
         </button>
       </div>
 
-      <Table ref={tableRef} />
-    </div>
+      {/* 🧊 Frosted Glass Background only for the Table */}
+      <div className="main-container">
+        <Table ref={tableRef} />
+      </div>
+    </>
   );
 }
 
