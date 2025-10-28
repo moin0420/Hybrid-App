@@ -52,21 +52,30 @@ const Table = forwardRef((props, ref) => {
   useImperativeHandle(ref, () => ({ fetchRows }));
 
   useEffect(() => {
-    fetchRows();
-    socket.on("editing_status", (data) => {
-      setEditingStatus((prev) => {
-        const updated = { ...prev };
-        const { requirementid, user, field } = data;
-        if (!user || !field) delete updated[requirementid];
-        else updated[requirementid] = { user, field };
-        return updated;
-      });
+  fetchRows();
+
+  // 🔄 Listen for real-time editing status updates
+  socket.on("editing_status", (data) => {
+    setEditingStatus((prev) => {
+      const updated = { ...prev };
+      const { requirementid, user, field } = data;
+      if (!user || !field) delete updated[requirementid];
+      else updated[requirementid] = { user, field };
+      return updated;
     });
-    return () => {
-      socket.off("requisitions_updated");
-      socket.off("editing_status");
-    };
-  }, []);
+  });
+
+  // 🔄 Listen for DB updates (from any user)
+  socket.on("requisitions_updated", () => {
+    fetchRows();
+  });
+
+  // 🧹 Cleanup
+  return () => {
+    socket.off("requisitions_updated");
+    socket.off("editing_status");
+  };
+}, []);
 
   const columns = [
     "requirementid",
@@ -320,59 +329,111 @@ const Table = forwardRef((props, ref) => {
           </thead>
 
           <tbody>
-            {paginatedRows.map((row) => (
-              <tr key={row.requirementid}>
-                {columns.map((col) => {
-                  if (col === "working") {
-                    const assignedUsers = row.assigned_recruiters || [];
-                    return (
-                      <td key={col} className="border p-1 text-center">
-                        <input
-                          type="checkbox"
-                          checked={assignedUsers.includes(currentUser)}
-                          onChange={() => toggleWorking(row)}
-                          disabled={disableCheckbox(row)}
-                        />
-                      </td>
-                    );
-                  }
+            {paginatedRows.map((row) => {
+              const recruiters = row.assigned_recruiters || [];
+              const someoneWorking = recruiters.length > 0; // 🔒 detect active workers
 
-                  if (col === "assigned_recruiters") {
-                    const assignedUsers = row.assigned_recruiters || [];
-                    const workingTimes = row.working_times || {};
-                    const nonWorkable = isNonWorkable(row);
-                    return (
-                      <td key={col} className="border p-1 text-center">
-                        {nonWorkable
-                          ? "Non-Workable"
-                          : assignedUsers.length
-                          ? assignedUsers.map((user) => (
-                              <div
-                                key={user}
-                                className="flex flex-col items-center text-xs"
-                              >
-                                <span
-                                  className={
-                                    user === currentUser
-                                      ? "font-semibold text-green-700"
-                                      : ""
-                                  }
+              return (
+                <tr key={row.requirementid}>
+                  {columns.map((col) => {
+                    if (col === "working") {
+                      const assignedUsers = recruiters;
+                      return (
+                        <td key={col} className="border p-1 text-center">
+                          <input
+                            type="checkbox"
+                            checked={assignedUsers.includes(currentUser)}
+                            onChange={() => toggleWorking(row)}
+                            disabled={disableCheckbox(row)}
+                          />
+                        </td>
+                      );
+                    }
+
+                    if (col === "assigned_recruiters") {
+                      const workingTimes = row.working_times || {};
+                      const nonWorkable = isNonWorkable(row);
+                      return (
+                        <td key={col} className="border p-1 text-center">
+                          {nonWorkable
+                            ? "Non-Workable"
+                            : recruiters.length
+                            ? recruiters.map((user) => (
+                                <div
+                                  key={user}
+                                  className="flex flex-col items-center text-xs"
                                 >
-                                  {user}{" "}
-                                  {workingTimes[user] && (
-                                    <span className="text-gray-500 text-[10px]">
-                                      ({formatTime(workingTimes[user])})
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
-                            ))
-                          : "-"}
-                      </td>
-                    );
-                  }
+                                  <span
+                                    className={
+                                      user === currentUser
+                                        ? "font-semibold text-green-700"
+                                        : ""
+                                    }
+                                  >
+                                    {user}{" "}
+                                    {workingTimes[user] && (
+                                      <span className="text-gray-500 text-[10px]">
+                                        ({formatTime(workingTimes[user])})
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                              ))
+                            : "-"}
+                        </td>
+                      );
+                    }
 
-                  if (col === "status") {
+                    if (col === "status") {
+                      const val =
+                        editing[row.requirementid]?.[col] ?? row[col] ?? "";
+                      const editingUser = editingStatus[row.requirementid];
+                      const isEditingOther =
+                        editingUser &&
+                        editingUser.user !== currentUser &&
+                        editingUser.field === col;
+                      return (
+                        <td
+                          key={col}
+                          className={`border p-1 text-center status-${val
+                            .toLowerCase()
+                            .replace(/\s/g, "")}`}
+                        >
+                          {isEditingOther ? (
+                            <div className="text-xs text-orange-500 italic">
+                              {editingUser.user} editing...
+                            </div>
+                          ) : (
+                            <select
+                              className="table-input"
+                              value={val}
+                              onChange={(e) =>
+                                handleEdit(
+                                  row.requirementid,
+                                  col,
+                                  e.target.value
+                                )
+                              }
+                              onBlur={() => handleSave(row.requirementid)}
+                              disabled={someoneWorking} // 🔒 disable when recruiters assigned
+                            >
+                              {[
+                                "Open",
+                                "Closed",
+                                "On Hold",
+                                "Filled",
+                                "Cancelled",
+                              ].map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </td>
+                      );
+                    }
+
                     const val =
                       editing[row.requirementid]?.[col] ?? row[col] ?? "";
                     const editingUser = editingStatus[row.requirementid];
@@ -380,72 +441,34 @@ const Table = forwardRef((props, ref) => {
                       editingUser &&
                       editingUser.user !== currentUser &&
                       editingUser.field === col;
+
                     return (
-                      <td
-                        key={col}
-                        className={`border p-1 text-center status-${val
-                          .toLowerCase()
-                          .replace(/\s/g, "")}`}
-                      >
+                      <td key={col} className="border p-1 text-center">
                         {isEditingOther ? (
                           <div className="text-xs text-orange-500 italic">
                             {editingUser.user} editing...
                           </div>
                         ) : (
-                          <select
+                          <input
                             className="table-input"
                             value={val}
                             onChange={(e) =>
-                              handleEdit(row.requirementid, col, e.target.value)
+                              handleEdit(
+                                row.requirementid,
+                                col,
+                                e.target.value
+                              )
                             }
                             onBlur={() => handleSave(row.requirementid)}
-                          >
-                            {[
-                              "Open",
-                              "Closed",
-                              "On Hold",
-                              "Filled",
-                              "Cancelled",
-                            ].map((opt) => (
-                              <option key={opt} value={opt}>
-                                {opt}
-                              </option>
-                            ))}
-                          </select>
+                            disabled={col === "slots" && someoneWorking} // 🔒 disable slots if recruiters assigned
+                          />
                         )}
                       </td>
                     );
-                  }
-
-                  const val =
-                    editing[row.requirementid]?.[col] ?? row[col] ?? "";
-                  const editingUser = editingStatus[row.requirementid];
-                  const isEditingOther =
-                    editingUser &&
-                    editingUser.user !== currentUser &&
-                    editingUser.field === col;
-
-                  return (
-                    <td key={col} className="border p-1 text-center">
-                      {isEditingOther ? (
-                        <div className="text-xs text-orange-500 italic">
-                          {editingUser.user} editing...
-                        </div>
-                      ) : (
-                        <input
-                          className="table-input"
-                          value={val}
-                          onChange={(e) =>
-                            handleEdit(row.requirementid, col, e.target.value)
-                          }
-                          onBlur={() => handleSave(row.requirementid)}
-                        />
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 
@@ -461,7 +484,9 @@ const Table = forwardRef((props, ref) => {
             Page {currentPage} of {totalPages || 1}
           </span>
           <button
-            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+            onClick={() =>
+              setCurrentPage((p) => Math.min(p + 1, totalPages))
+            }
             disabled={currentPage === totalPages || totalPages === 0}
             className="px-3 py-1 border rounded disabled:opacity-50"
           >
