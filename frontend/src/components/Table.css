@@ -5,103 +5,100 @@
 
 h2 {
   font-weight: 600;
-  font-size: 1.25rem;
-  margin-bottom: 1rem;
+  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
   color: #1e293b;
-}
-
-/* === Add Row Form === */
-.add-row-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 1rem;
-  background: #f9fafb;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-}
-
-.add-row-form input,
-.add-row-form select {
-  flex: 1;
-  min-width: 140px;
-  padding: 6px 10px;
-  font-size: 14px;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  background-color: #ffffff;
-  transition: all 0.2s ease;
-}
-
-.add-row-form input:focus,
-.add-row-form select:focus {
-  outline: none;
-  border-color: #6366f1;
-  background-color: #f0f4ff;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-}
-
-.add-row-form button {
-  background-color: #4f46e5;
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  font-size: 14px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.add-row-form button:hover:not(:disabled) {
-  background-color: #4338ca;
-}
-
-.add-row-form button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 /* === Table Container === */
 .table-wrapper {
   max-height: 600px;
   overflow-y: auto;
+  overflow-x: hidden; /* ✅ keep table contained horizontally */
   border-radius: 8px;
   border: 1px solid #cbd5e1;
   background: #ffffff;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  position: relative;
 }
 
 /* === Base Table === */
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: 13px;
+  table-layout: auto;
+  transition: all 0.2s ease-in-out;
+  word-wrap: break-word;
 }
 
+/* === Table Headers & Cells === */
 th,
 td {
-  padding: 10px;
+  padding: 6px 8px;
   border-bottom: 1px solid #e2e8f0;
   text-align: left;
   color: #1e293b;
   vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  user-select: none;
+  word-break: break-word;
 }
 
+/* === Auto-balance column widths === */
+th,
+td {
+  width: 10%; /* ✅ ensures columns share space evenly */
+}
+th:nth-child(1),
+td:nth-child(1) {
+  width: 8%; /* smaller for ID */
+}
+th:nth-child(2),
+td:nth-child(2) {
+  width: 18%; /* job title */
+}
+th:nth-child(3),
+td:nth-child(3) {
+  width: 16%; /* client */
+}
+th:nth-child(4),
+td:nth-child(4) {
+  width: 16%; /* recruiters */
+}
+th:nth-child(5),
+td:nth-child(5) {
+  width: 16%; /* working time */
+}
+th:nth-child(6),
+td:nth-child(6) {
+  width: 8%; /* slots */
+}
+th:nth-child(7),
+td:nth-child(7) {
+  width: 10%; /* status */
+}
+
+/* === Header Styling === */
 thead {
   background-color: #f1f5f9;
   position: sticky;
   top: 0;
-  z-index: 10;
+  z-index: 20;
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.05);
 }
 
 th {
+  position: relative;
   font-weight: 600;
   text-transform: uppercase;
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: 0.03em;
+  overflow: visible;
+  transition: width 0.15s ease-out;
+  background-color: #f8fafc;
 }
 
 /* === Alternate Row Shading & Hover === */
@@ -138,9 +135,10 @@ td.status-cancelled {
   text-align: center;
   font-weight: 600;
   border-radius: 6px;
-  padding: 6px 10px;
-  width: 120px;
+  padding: 4px 6px;
+  min-width: 80px;
   transition: all 0.3s ease;
+  font-size: 12px;
 }
 
 /* === Status Color Coding === */
@@ -148,22 +146,18 @@ td.status-cancelled {
   background-color: #dcfce7 !important;
   color: #166534 !important;
 }
-
 .status-onhold {
   background-color: #fef9c3 !important;
   color: #92400e !important;
 }
-
 .status-filled {
   background-color: #dbeafe !important;
   color: #1e3a8a !important;
 }
-
 .status-closed {
   background-color: #fee2e2 !important;
   color: #991b1b !important;
 }
-
 .status-cancelled {
   background-color: #f3e8ff !important;
   color: #6b21a8 !important;
@@ -171,57 +165,69 @@ td.status-cancelled {
 
 /* === Scrollbar Styling === */
 .table-wrapper::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
-
 .table-wrapper::-webkit-scrollbar-track {
   background: #f1f5f9;
   border-radius: 8px;
 }
-
 .table-wrapper::-webkit-scrollbar-thumb {
   background-color: #cbd5e1;
   border-radius: 8px;
 }
 
-/* === Responsive Design === */
-@media (max-width: 768px) {
-  .add-row-form {
-    flex-direction: column;
-    align-items: stretch;
+/* === Column Resize Handle === */
+.resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 6px;
+  cursor: col-resize;
+  user-select: none;
+  background-color: transparent;
+  transition: background-color 0.2s ease, width 0.1s ease;
+}
+
+th:hover .resize-handle {
+  background-color: rgba(100, 116, 139, 0.3);
+}
+
+.resize-handle:active {
+  background-color: #3b82f6;
+  width: 8px;
+}
+
+/* === Column Width Boundaries === */
+th,
+td {
+  min-width: 60px;
+  max-width: 240px; /* ✅ ensures wrapping but stays compact */
+}
+
+/* === Responsive Adjustments === */
+@media (max-width: 1200px) {
+  table {
+    font-size: 12px;
   }
 
-  table,
-  thead,
-  tbody,
   th,
-  td,
-  tr {
-    display: block;
-  }
-
-  tr {
-    margin-bottom: 12px;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 8px;
-    background: #ffffff;
-  }
-
   td {
-    border: none;
-    padding: 4px 0;
-    display: flex;
-    justify-content: space-between;
+    padding: 4px 6px;
   }
 
-  td::before {
-    content: attr(data-label);
-    font-weight: 600;
-    color: #334155;
+  td.status-open,
+  td.status-onhold,
+  td.status-filled,
+  td.status-closed,
+  td.status-cancelled {
+    min-width: 70px;
+    font-size: 11px;
   }
+}
 
-  thead {
-    display: none;
+@media (max-width: 768px) {
+  .table-wrapper {
+    overflow-x: auto;
   }
 }

@@ -8,6 +8,7 @@ function App() {
   const tableRef = useRef();
   const [currentUser, setCurrentUser] = useState("");
   const [newReq, setNewReq] = useState({
+    requirementId: "",
     title: "",
     client: "",
     slots: 1,
@@ -26,14 +27,24 @@ function App() {
 
   // === Add new requisition ===
   const handleAddRow = async () => {
-    if (!newReq.title.trim() || !newReq.client.trim()) {
-      alert("Please enter Job Title and Client name");
+    if (
+      !newReq.requirementId.trim() ||
+      !newReq.title.trim() ||
+      !newReq.client.trim()
+    ) {
+      alert("Please enter Requirement ID, Job Title, and Client name");
       return;
     }
 
     try {
       await axios.post("/api/requisitions", newReq);
-      setNewReq({ title: "", client: "", slots: 1, status: "Open" });
+      setNewReq({
+        requirementId: "",
+        title: "",
+        client: "",
+        slots: 1,
+        status: "Open",
+      });
       tableRef.current?.fetchRows();
     } catch (err) {
       console.error(err);
@@ -49,7 +60,20 @@ function App() {
         </div>
       </header>
 
-      <div className="flex items-end gap-2 mb-6 bg-white p-3 rounded-lg shadow">
+      <div className="add-req-container">
+        <div>
+          <label className="block text-xs font-semibold text-gray-600">
+            Requirement ID
+          </label>
+          <input
+            className="border p-1 rounded w-40"
+            value={newReq.requirementId}
+            onChange={(e) =>
+              setNewReq({ ...newReq, requirementId: e.target.value })
+            }
+          />
+        </div>
+
         <div>
           <label className="block text-xs font-semibold text-gray-600">
             Job Title
@@ -94,9 +118,7 @@ function App() {
           <select
             className="border p-1 rounded"
             value={newReq.status}
-            onChange={(e) =>
-              setNewReq({ ...newReq, status: e.target.value })
-            }
+            onChange={(e) => setNewReq({ ...newReq, status: e.target.value })}
           >
             <option>Open</option>
             <option>Closed</option>
@@ -106,12 +128,9 @@ function App() {
           </select>
         </div>
 
-        <button
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow"
-          onClick={handleAddRow}
-        >
-          Add Requirement
-        </button>
+<button className="add-req-btn" onClick={handleAddRow}>
+  + Add Requirement
+</button>
       </div>
 
       <Table ref={tableRef} />

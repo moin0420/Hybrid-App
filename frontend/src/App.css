@@ -1,161 +1,117 @@
-/* === Global Layout & Typography === */
-body {
-  margin: 0;
-  font-family: "Inter", sans-serif;
-  background-color: #f8faff;
-  color: #1e293b;
-  line-height: 1.5;
-}
-
-.p-6 {
-  padding: 1.5rem;
-}
-
-.min-h-screen {
-  min-height: 100vh;
-}
-
-.bg-gray-50 {
-  background-color: #f8fafc;
-}
-
-.text-gray-800 {
-  color: #1e293b;
-}
-
-/* === Header === */
-header {
-  margin-bottom: 1.5rem;
-}
-
-header h1 {
-  font-size: clamp(1.25rem, 2.5vw, 2rem);
-  font-weight: 700;
-  margin: 0 0 0.5rem 0;
-  color: #1e293b;
-}
-
-header .text-sm {
-  color: #475569;
-  font-size: 0.875rem;
-}
-
-header .font-semibold {
-  font-weight: 600;
-}
-
 /* === Add Requirement Form === */
-.flex {
+.add-req-container {
   display: flex;
-}
-
-.items-end {
+  flex-wrap: wrap;
   align-items: flex-end;
-}
-
-.gap-2 {
-  gap: 0.5rem;
-}
-
-.mb-6 {
+  gap: 1rem;
   margin-bottom: 1.5rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
-.bg-white {
-  background-color: #ffffff;
+/* Individual input groups */
+.add-req-container div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
-.p-3 {
-  padding: 0.75rem;
-}
-
-.rounded-lg {
-  border-radius: 0.75rem;
-}
-
-.shadow {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-/* === Form Controls === */
-label {
-  display: block;
-  font-size: 0.75rem;
+.add-req-container label {
+  font-size: 11px;
   font-weight: 600;
   color: #475569;
-  margin-bottom: 0.25rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
-input,
-select {
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  padding: 6px 10px;
-  font-size: 14px;
-  transition: all 0.2s ease;
+/* Inputs */
+.add-req-container input,
+.add-req-container select {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 13px;
+  background-color: #f9fafb;
+  transition: border-color 0.2s, background-color 0.2s;
 }
 
-input:focus,
-select:focus {
-  border-color: #6366f1;
+.add-req-container input:focus,
+.add-req-container select:focus {
+  border-color: #2563eb;
   background-color: #f0f4ff;
   outline: none;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
-button {
-  background-color: #4f46e5;
-  color: #ffffff;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
+/* Specific width tweaks */
+.add-req-container input.w-40 {
+  width: 120px;
 }
 
-button:hover {
-  background-color: #4338ca;
+.add-req-container input.w-48,
+.add-req-container select {
+  width: 160px;
 }
 
-/* === Utility === */
-.text-center {
+.add-req-container input.w-20 {
+  width: 70px;
   text-align: center;
 }
 
-.text-sm {
-  font-size: 0.875rem;
+/* Add button */
+.add-req-btn {
+  background-color: #2563eb;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: background-color 0.2s, transform 0.1s;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.2);
 }
 
-.text-xs {
-  font-size: 0.75rem;
+.add-req-btn:hover {
+  background-color: #1d4ed8;
+  transform: translateY(-1px);
 }
 
-.font-bold {
-  font-weight: 700;
+.add-req-btn:active {
+  background-color: #1e40af;
+  transform: translateY(0);
 }
 
-.font-semibold {
-  font-weight: 600;
+/* === Logged-in User Header === */
+header {
+  margin-bottom: 0.5rem;
 }
 
-/* === Responsive Tweaks === */
+header .text-sm {
+  font-size: 13px;
+  color: #475569;
+}
+
+header .font-semibold {
+  color: #1e293b;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
-  .flex {
+  .add-req-container {
     flex-direction: column;
+    align-items: stretch;
   }
 
-  input,
-  select {
+  .add-req-container input,
+  .add-req-container select {
     width: 100%;
   }
 
-  button {
+  .add-req-btn {
     width: 100%;
-    margin-top: 0.5rem;
-  }
-
-  header h1 {
-    font-size: 1.25rem;
+    text-align: center;
   }
 }

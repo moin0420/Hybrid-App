@@ -21,15 +21,16 @@ const Table = forwardRef((props, ref) => {
   const [filters, setFilters] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 20;
-  const [colWidths, setColWidths] = useState({});
-  const thRefs = useRef({});
-  const [newReq, setNewReq] = useState({
-    requirementid: "",
-    title: "",
-    client: "",
-    slots: "",
-    status: "Open",
+  const [colWidths, setColWidths] = useState({
+    requirementid: 90,
+    title: 220,
+    client: 160,
+    slots: 70,
+    status: 120,
+    assigned_recruiters: 200,
+    working: 90,
   });
+  const thRefs = useRef({});
 
   // === Initialize current user ===
   useEffect(() => {
@@ -82,7 +83,6 @@ const Table = forwardRef((props, ref) => {
 
   const isNonWorkable = (row) => row.status !== "Open" || row.slots === 0;
 
-  // === Handle edit and save ===
   const handleEdit = (reqId, field, value) => {
     socket.emit("editing_status", {
       requirementid: reqId,
@@ -122,29 +122,6 @@ const Table = forwardRef((props, ref) => {
     }
   };
 
-  // === Add new requisition ===
-  const handleAddRequisition = async () => {
-    if (!newReq.requirementid.trim()) {
-      alert("Please enter a Requirement ID");
-      return;
-    }
-    try {
-      await axios.post("/api/requisitions", newReq);
-      setNewReq({
-        requirementid: "",
-        title: "",
-        client: "",
-        slots: "",
-        status: "Open",
-      });
-      socket.emit("requisitions_updated");
-      fetchRows();
-    } catch (err) {
-      alert(err.response?.data?.message || "Error adding requisition");
-    }
-  };
-
-  // === Working toggle ===
   const toggleWorking = async (row) => {
     if (!row.requirementid) return;
     const assignedUsers = row.assigned_recruiters || [];
@@ -195,7 +172,6 @@ const Table = forwardRef((props, ref) => {
     );
   };
 
-  // === Sort + Filter ===
   const handleSort = (field) => {
     let direction = "ascending";
     if (sortConfig.field === field && sortConfig.direction === "ascending") {
@@ -245,7 +221,7 @@ const Table = forwardRef((props, ref) => {
     const startX = e.clientX;
     const startWidth = thRefs.current[col]?.offsetWidth || 100;
     const doDrag = (event) => {
-      const newWidth = Math.max(40, startWidth + event.clientX - startX);
+      const newWidth = Math.max(60, startWidth + event.clientX - startX);
       setColWidths((prev) => ({ ...prev, [col]: newWidth }));
     };
     const stopDrag = () => {
@@ -256,7 +232,6 @@ const Table = forwardRef((props, ref) => {
     document.addEventListener("mouseup", stopDrag);
   };
 
-  // === Format Time ===
   const formatTime = (timeString) => {
     if (!timeString) return "";
     const date = new Date(timeString);
@@ -268,64 +243,10 @@ const Table = forwardRef((props, ref) => {
     });
   };
 
-  // === Render ===
   return (
     <div className="p-4">
       <div className="flex justify-center mb-4">
         <h2 className="font-bold text-lg">Requirements List</h2>
-      </div>
-
-      {/* === Add new requisition form === */}
-      <div className="flex gap-2 mb-4">
-        <input
-          type="text"
-          placeholder="Requirement ID"
-          value={newReq.requirementid}
-          onChange={(e) =>
-            setNewReq({ ...newReq, requirementid: e.target.value })
-          }
-          className="border rounded px-2 py-1 text-sm"
-        />
-        <input
-          type="text"
-          placeholder="Title"
-          value={newReq.title}
-          onChange={(e) => setNewReq({ ...newReq, title: e.target.value })}
-          className="border rounded px-2 py-1 text-sm"
-        />
-        <input
-          type="text"
-          placeholder="Client"
-          value={newReq.client}
-          onChange={(e) => setNewReq({ ...newReq, client: e.target.value })}
-          className="border rounded px-2 py-1 text-sm"
-        />
-        <input
-          type="number"
-          placeholder="Slots"
-          value={newReq.slots}
-          onChange={(e) => setNewReq({ ...newReq, slots: e.target.value })}
-          className="border rounded px-2 py-1 text-sm w-20"
-        />
-        <select
-          value={newReq.status}
-          onChange={(e) => setNewReq({ ...newReq, status: e.target.value })}
-          className={`border rounded px-2 py-1 text-sm status-${newReq.status
-            .toLowerCase()
-            .replace(/\s/g, "")}`}
-        >
-          {["Open", "Closed", "On Hold", "Filled", "Cancelled"].map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={handleAddRequisition}
-          className="bg-blue-500 text-white px-3 py-1 rounded"
-        >
-          Add
-        </button>
       </div>
 
       <div className="table-wrapper">
@@ -337,7 +258,9 @@ const Table = forwardRef((props, ref) => {
                   key={col}
                   ref={(el) => (thRefs.current[col] = el)}
                   className="border p-1 align-top"
-                  style={{ width: colWidths[col] }}
+                  style={{
+                    width: colWidths[col] ? `${colWidths[col]}px` : "auto",
+                  }}
                 >
                   <div
                     className="th-content cursor-pointer"
