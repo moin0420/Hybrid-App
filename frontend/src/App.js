@@ -6,7 +6,6 @@ import "./App.css";
 function App() {
   const tableRef = useRef();
   const [currentUser, setCurrentUser] = useState("");
-  const [error, setError] = useState(""); // 🔹 Inline error state
   const [newReq, setNewReq] = useState({
     requirementId: "",
     title: "",
@@ -14,6 +13,7 @@ function App() {
     slots: 1,
     status: "Open",
   });
+  const [error, setError] = useState(""); // 🆕 For error message
 
   // === Ask user name on first visit ===
   useEffect(() => {
@@ -27,13 +27,13 @@ function App() {
 
   // === Add new requisition ===
   const handleAddRow = async () => {
-    setError(""); // Clear previous error
     if (
       !newReq.requirementId.trim() ||
       !newReq.title.trim() ||
       !newReq.client.trim()
     ) {
-      setError("Please fill all mandatory fields — Requirement ID, Job Title, and Client.");
+      setError("Please enter Requirement ID, Job Title, and Client name");
+      setTimeout(() => setError(""), 4000); // 🕓 Auto-clear after 4 sec
       return;
     }
 
@@ -49,11 +49,8 @@ function App() {
       tableRef.current?.fetchRows();
     } catch (err) {
       console.error(err);
-      if (err.response?.data?.message) {
-        setError(err.response.data.message);
-      } else {
-        setError("Error adding new requisition. Please try again.");
-      }
+      setError("Error adding new requisition");
+      setTimeout(() => setError(""), 4000);
     }
   };
 
@@ -65,56 +62,45 @@ function App() {
         </div>
       </header>
 
+      {/* 🆕 Error Message */}
+      {error && <div className={`error-message ${error ? "" : "fade-out"}`}>{error}</div>}
+
       <div className="add-req-container">
-        {/* === Requirement ID === */}
         <div>
           <label className="block text-xs font-semibold text-gray-600">
-            Requirement ID <span className="text-red-500">*</span>
+            Requirement ID
           </label>
           <input
-            className={`border p-1 rounded w-40 ${
-              error && !newReq.requirementId ? "border-red-400 bg-red-50" : ""
-            }`}
+            className="border p-1 rounded w-40"
             value={newReq.requirementId}
             onChange={(e) =>
               setNewReq({ ...newReq, requirementId: e.target.value })
             }
           />
-          {/* 🔹 Inline Error Message */}
-          {error && (
-            <div className="text-red-500 text-xs mt-1 w-64">{error}</div>
-          )}
         </div>
 
-        {/* === Job Title === */}
         <div>
           <label className="block text-xs font-semibold text-gray-600">
-            Job Title <span className="text-red-500">*</span>
+            Job Title
           </label>
           <input
-            className={`border p-1 rounded w-48 ${
-              error && !newReq.title ? "border-red-400 bg-red-50" : ""
-            }`}
+            className="border p-1 rounded w-48"
             value={newReq.title}
             onChange={(e) => setNewReq({ ...newReq, title: e.target.value })}
           />
         </div>
 
-        {/* === Client === */}
         <div>
           <label className="block text-xs font-semibold text-gray-600">
-            Client <span className="text-red-500">*</span>
+            Client
           </label>
           <input
-            className={`border p-1 rounded w-48 ${
-              error && !newReq.client ? "border-red-400 bg-red-50" : ""
-            }`}
+            className="border p-1 rounded w-48"
             value={newReq.client}
             onChange={(e) => setNewReq({ ...newReq, client: e.target.value })}
           />
         </div>
 
-        {/* === Slots === */}
         <div>
           <label className="block text-xs font-semibold text-gray-600">
             Slots
@@ -130,7 +116,6 @@ function App() {
           />
         </div>
 
-        {/* === Status === */}
         <div>
           <label className="block text-xs font-semibold text-gray-600">
             Status

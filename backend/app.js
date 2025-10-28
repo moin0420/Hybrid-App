@@ -78,6 +78,8 @@ io.on("connection", (socket) => {
 });
 
 // ===== ROUTES =====
+
+// Fetch all requisitions
 app.get("/api/requisitions", async (req, res) => {
   try {
     const result = await pool.query(
@@ -90,22 +92,40 @@ app.get("/api/requisitions", async (req, res) => {
   }
 });
 
+// Create a new requisition (strict ID requirement)
 app.post("/api/requisitions", async (req, res) => {
   try {
-    let { requirementid, title, client, slots, status } = req.body;
-    if (!requirementid) {
-      requirementid = `REQ-${Date.now()}`;
+    let {
+      requirementid,
+      requirementId,
+      title,
+      client,
+      slots,
+      status,
+    } = req.body;
+
+    // Normalize key name
+    requirementid = requirementid || requirementId;
+
+    // 🔹 REQUIREMENT ID IS MANDATORY
+    if (!requirementid || requirementid.trim() === "") {
+      return res
+        .status(400)
+        .json({ message: "Requirement ID is mandatory to create a new row." });
     }
 
-    // Ensure unique requirement ID
+    // 🔹 Ensure unique requirement ID
     const exists = await pool.query(
       "SELECT requirementid FROM requisitions WHERE requirementid = $1",
       [requirementid]
     );
     if (exists.rows.length > 0) {
-      return res.status(400).json({ message: "Requirement ID already exists." });
+      return res
+        .status(400)
+        .json({ message: "Requirement ID already exists." });
     }
 
+    // 🔹 Insert row
     const result = await pool.query(
       `INSERT INTO requisitions (requirementid, title, client, slots, status, assigned_recruiters, working_times)
        VALUES ($1, $2, $3, $4, $5, '{}', '{}') RETURNING *`,
@@ -120,6 +140,7 @@ app.post("/api/requisitions", async (req, res) => {
   }
 });
 
+// Update requisition
 app.put("/api/requisitions/:id", async (req, res) => {
   const { id } = req.params;
   const fields = req.body;
