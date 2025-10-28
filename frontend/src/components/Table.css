@@ -14,7 +14,7 @@ h2 {
 .table-wrapper {
   max-height: 600px;
   overflow-y: auto;
-  overflow-x: hidden; /* ✅ keep table contained horizontally */
+  overflow-x: hidden;
   border-radius: 8px;
   border: 1px solid #cbd5e1;
   background: #ffffff;
@@ -27,9 +27,10 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  table-layout: auto;
+  table-layout: auto !important; /* ✅ allow dynamic resizing */
   transition: all 0.2s ease-in-out;
   word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 /* === Table Headers & Cells === */
@@ -40,45 +41,13 @@ td {
   text-align: left;
   color: #1e293b;
   vertical-align: middle;
+  user-select: none;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: normal;
-  user-select: none;
+  white-space: nowrap;
   word-break: break-word;
-}
-
-/* === Auto-balance column widths === */
-th,
-td {
-  width: 10%; /* ✅ ensures columns share space evenly */
-}
-th:nth-child(1),
-td:nth-child(1) {
-  width: 8%; /* smaller for ID */
-}
-th:nth-child(2),
-td:nth-child(2) {
-  width: 18%; /* job title */
-}
-th:nth-child(3),
-td:nth-child(3) {
-  width: 16%; /* client */
-}
-th:nth-child(4),
-td:nth-child(4) {
-  width: 16%; /* recruiters */
-}
-th:nth-child(5),
-td:nth-child(5) {
-  width: 16%; /* working time */
-}
-th:nth-child(6),
-td:nth-child(6) {
-  width: 8%; /* slots */
-}
-th:nth-child(7),
-td:nth-child(7) {
-  width: 10%; /* status */
+  transition: width 0.15s ease-in-out;
+  box-sizing: border-box;
 }
 
 /* === Header Styling === */
@@ -90,14 +59,13 @@ thead {
   box-shadow: 0 2px 2px rgba(0, 0, 0, 0.05);
 }
 
-th {
+thead th {
   position: relative;
   font-weight: 600;
   text-transform: uppercase;
   font-size: 12px;
   letter-spacing: 0.03em;
   overflow: visible;
-  transition: width 0.15s ease-out;
   background-color: #f8fafc;
 }
 
@@ -110,20 +78,67 @@ tbody tr:hover {
   background-color: #f1f5f9;
 }
 
-/* === Fade-In Animation for New Rows === */
-@keyframes fadeInRow {
-  from {
-    background-color: #e0f2fe;
-    opacity: 0;
-  }
-  to {
-    background-color: #ffffff;
-    opacity: 1;
-  }
+/* === Column Resize Handle === */
+.resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 6px;
+  cursor: col-resize;
+  user-select: none;
+  background: transparent;
+  z-index: 10;
+  transition: background-color 0.15s ease;
 }
 
-tr.new-row {
-  animation: fadeInRow 0.8s ease-in-out;
+th:hover .resize-handle {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.resize-handle:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* === While resizing === */
+body.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* === Editable Inputs & Dropdowns === */
+.table-input,
+.status-select,
+.editable-input {
+  width: 100% !important; /* ✅ auto fits column width */
+  max-width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 13px;
+  background-color: #fff;
+  box-sizing: border-box;
+  transition: width 0.15s ease, border-color 0.2s ease;
+}
+
+.table-input:focus,
+.status-select:focus,
+.editable-input:focus {
+  border-color: #3b82f6;
+  outline: none;
+  background-color: #f0f9ff;
+}
+
+/* === Filter Inputs (Header) === */
+.filter-input {
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+  background-color: #ffffff;
 }
 
 /* === Status Cell Styling === */
@@ -163,6 +178,31 @@ td.status-cancelled {
   color: #6b21a8 !important;
 }
 
+/* === Recruiter Name Highlight === */
+td .text-green-700 {
+  font-weight: 700;
+  color: #15803d;
+  animation: recruiterHighlight 1s ease-in-out;
+}
+
+@keyframes recruiterHighlight {
+  0% {
+    color: #15803d;
+    text-shadow: 0 0 6px rgba(21, 128, 61, 0.4);
+    opacity: 0.3;
+  }
+  50% {
+    color: #16a34a;
+    text-shadow: 0 0 10px rgba(34, 197, 94, 0.6);
+    opacity: 1;
+  }
+  100% {
+    color: #15803d;
+    text-shadow: none;
+    opacity: 1;
+  }
+}
+
 /* === Scrollbar Styling === */
 .table-wrapper::-webkit-scrollbar {
   width: 6px;
@@ -176,58 +216,44 @@ td.status-cancelled {
   border-radius: 8px;
 }
 
-/* === Column Resize Handle === */
-.resize-handle {
-  position: absolute;
-  right: 0;
-  top: 0;
-  height: 100%;
-  width: 6px;
-  cursor: col-resize;
-  user-select: none;
-  background-color: transparent;
-  transition: background-color 0.2s ease, width 0.1s ease;
+/* === Pagination === */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
 }
 
-th:hover .resize-handle {
-  background-color: rgba(100, 116, 139, 0.3);
+.pagination button {
+  border: 1px solid #cbd5e1;
+  background-color: #f8fafc;
+  color: #1e293b;
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
 }
 
-.resize-handle:active {
+.pagination button:hover:not(:disabled) {
+  background-color: #e2e8f0;
+}
+
+.pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination button.active {
   background-color: #3b82f6;
-  width: 8px;
+  color: white;
+  border-color: #3b82f6;
 }
 
-/* === Column Width Boundaries === */
-th,
-td {
-  min-width: 60px;
-  max-width: 240px; /* ✅ ensures wrapping but stays compact */
-}
-
-/* === Responsive Adjustments === */
-@media (max-width: 1200px) {
-  table {
-    font-size: 12px;
-  }
-
-  th,
-  td {
-    padding: 4px 6px;
-  }
-
-  td.status-open,
-  td.status-onhold,
-  td.status-filled,
-  td.status-closed,
-  td.status-cancelled {
-    min-width: 70px;
-    font-size: 11px;
-  }
-}
-
-@media (max-width: 768px) {
-  .table-wrapper {
-    overflow-x: auto;
-  }
+/* === Header Content Alignment === */
+.th-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }

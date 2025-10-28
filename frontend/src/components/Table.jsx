@@ -1,4 +1,3 @@
-// frontend/src/components/Table.jsx
 import React, {
   useState,
   useEffect,
@@ -22,17 +21,16 @@ const Table = forwardRef((props, ref) => {
   const [currentPage, setCurrentPage] = useState(1);
   const rowsPerPage = 20;
   const [colWidths, setColWidths] = useState({
-    requirementid: 90,
-    title: 220,
-    client: 160,
-    slots: 70,
+    requirementid: 130,
+    title: 240,
+    client: 120,
+    slots: 60,
     status: 120,
-    assigned_recruiters: 200,
-    working: 90,
+    assigned_recruiters: 150,
+    working: 100,
   });
   const thRefs = useRef({});
 
-  // === Initialize current user ===
   useEffect(() => {
     let user = localStorage.getItem("recruiterName");
     if (!user) {
@@ -42,7 +40,6 @@ const Table = forwardRef((props, ref) => {
     setCurrentUser(user || "Anonymous");
   }, []);
 
-  // === Fetch rows ===
   const fetchRows = async () => {
     try {
       const res = await axios.get("/api/requisitions");
@@ -56,14 +53,14 @@ const Table = forwardRef((props, ref) => {
 
   useEffect(() => {
     fetchRows();
-    socket.on("requisitions_updated", fetchRows);
     socket.on("editing_status", (data) => {
-      setEditingStatus((prev) => ({
-        ...prev,
-        [data.requirementid]: data.user
-          ? { user: data.user, field: data.field }
-          : null,
-      }));
+      setEditingStatus((prev) => {
+        const updated = { ...prev };
+        const { requirementid, user, field } = data;
+        if (!user || !field) delete updated[requirementid];
+        else updated[requirementid] = { user, field };
+        return updated;
+      });
     });
     return () => {
       socket.off("requisitions_updated");
@@ -84,11 +81,26 @@ const Table = forwardRef((props, ref) => {
   const isNonWorkable = (row) => row.status !== "Open" || row.slots === 0;
 
   const handleEdit = (reqId, field, value) => {
+    if (value === "" || value === null) {
+      socket.emit("editing_status", {
+        requirementid: reqId,
+        user: null,
+        field: null,
+      });
+      setEditing((prev) => {
+        const copy = { ...prev };
+        if (copy[reqId]) delete copy[reqId][field];
+        return copy;
+      });
+      return;
+    }
+
     socket.emit("editing_status", {
       requirementid: reqId,
       user: currentUser,
       field,
     });
+
     setEditing((prev) => ({
       ...prev,
       [reqId]: { ...prev[reqId], [field]: value },
@@ -113,6 +125,11 @@ const Table = forwardRef((props, ref) => {
       });
     } catch (err) {
       alert(err.response?.data?.message || "Error saving changes");
+      socket.emit("editing_status", {
+        requirementid: reqId,
+        user: null,
+        field: null,
+      });
       await fetchRows();
       setEditing((prev) => {
         const copy = { ...prev };
@@ -139,12 +156,14 @@ const Table = forwardRef((props, ref) => {
       alert("Two recruiters are already working on this requirement.");
       return;
     }
+
     const newAssigned = isAssigned
       ? assignedUsers.filter((u) => u !== currentUser)
       : [...assignedUsers, currentUser];
     const newWorkingTimes = { ...(row.working_times || {}) };
     if (isAssigned) delete newWorkingTimes[currentUser];
     else newWorkingTimes[currentUser] = new Date();
+
     try {
       await axios.put(`/api/requisitions/${row.requirementid}`, {
         assigned_recruiters: newAssigned,
@@ -215,11 +234,11 @@ const Table = forwardRef((props, ref) => {
     currentPage * rowsPerPage
   );
 
-  // === Column resize ===
   const startResize = (e, col) => {
     e.preventDefault();
     const startX = e.clientX;
     const startWidth = thRefs.current[col]?.offsetWidth || 100;
+    document.body.classList.add("resizing");
     const doDrag = (event) => {
       const newWidth = Math.max(60, startWidth + event.clientX - startX);
       setColWidths((prev) => ({ ...prev, [col]: newWidth }));
@@ -227,6 +246,7 @@ const Table = forwardRef((props, ref) => {
     const stopDrag = () => {
       document.removeEventListener("mousemove", doDrag);
       document.removeEventListener("mouseup", stopDrag);
+      document.body.classList.remove("resizing");
     };
     document.addEventListener("mousemove", doDrag);
     document.addEventListener("mouseup", stopDrag);
@@ -298,6 +318,7 @@ const Table = forwardRef((props, ref) => {
               ))}
             </tr>
           </thead>
+
           <tbody>
             {paginatedRows.map((row) => (
               <tr key={row.requirementid}>
@@ -337,13 +358,13 @@ const Table = forwardRef((props, ref) => {
                                       : ""
                                   }
                                 >
-                                  {user}
+                                  {user}{" "}
+                                  {workingTimes[user] && (
+                                    <span className="text-gray-500 text-[10px]">
+                                      ({formatTime(workingTimes[user])})
+                                    </span>
+                                  )}
                                 </span>
-                                {workingTimes[user] && (
-                                  <span className="text-[10px] text-gray-500">
-                                    {formatTime(workingTimes[user])}
-                                  </span>
-                                )}
                               </div>
                             ))
                           : "-"}
@@ -372,7 +393,7 @@ const Table = forwardRef((props, ref) => {
                           </div>
                         ) : (
                           <select
-                            className="border rounded px-1 text-sm"
+                            className="table-input"
                             value={val}
                             onChange={(e) =>
                               handleEdit(row.requirementid, col, e.target.value)
@@ -412,7 +433,7 @@ const Table = forwardRef((props, ref) => {
                         </div>
                       ) : (
                         <input
-                          className="border rounded px-1 text-sm w-full"
+                          className="table-input"
                           value={val}
                           onChange={(e) =>
                             handleEdit(row.requirementid, col, e.target.value)
@@ -427,6 +448,26 @@ const Table = forwardRef((props, ref) => {
             ))}
           </tbody>
         </table>
+
+        <div className="flex justify-between items-center mt-3 text-sm">
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 border rounded disabled:opacity-50"
+          >
+            ← Prev
+          </button>
+          <span>
+            Page {currentPage} of {totalPages || 1}
+          </span>
+          <button
+            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+            disabled={currentPage === totalPages || totalPages === 0}
+            className="px-3 py-1 border rounded disabled:opacity-50"
+          >
+            Next →
+          </button>
+        </div>
       </div>
     </div>
   );

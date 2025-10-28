@@ -65,15 +65,48 @@ const ensureTable = async () => {
 };
 
 // ===== SOCKET.IO HANDLING =====
+const activeEditors = new Map(); // { req_id: { user: name, column: col, socket: id } }
+
 io.on("connection", (socket) => {
   console.log("🔌 Client connected:", socket.id);
 
+  // When user starts editing a cell
   socket.on("editing_status", (data) => {
-    socket.broadcast.emit("editing_status", data);
+    const { req_id, column, isEditing, user } = data;
+
+    if (isEditing) {
+      // Mark row as being edited
+      activeEditors.set(req_id, { user, column, socket: socket.id });
+    } else {
+      // Stop editing
+      activeEditors.delete(req_id);
+    }
+
+    // Broadcast update to all *other* clients
+    socket.broadcast.emit("editing_status", {
+      req_id,
+      column,
+      isEditing,
+      user,
+    });
   });
 
+  // Cleanup when user disconnects
   socket.on("disconnect", () => {
     console.log("❌ Client disconnected:", socket.id);
+
+    // Remove any "editing" markers belonging to this user
+    for (const [req_id, editor] of activeEditors.entries()) {
+      if (editor.socket === socket.id) {
+        activeEditors.delete(req_id);
+        socket.broadcast.emit("editing_status", {
+          req_id,
+          column: editor.column,
+          isEditing: false,
+          user: editor.user,
+        });
+      }
+    }
   });
 });
 
