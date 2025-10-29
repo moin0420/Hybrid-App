@@ -31,6 +31,7 @@ const Table = forwardRef((props, ref) => {
   });
   const thRefs = useRef({});
 
+  // Load user
   useEffect(() => {
     let user = localStorage.getItem("recruiterName");
     if (!user) {
@@ -40,6 +41,7 @@ const Table = forwardRef((props, ref) => {
     setCurrentUser(user || "Anonymous");
   }, []);
 
+  // Fetch all rows
   const fetchRows = async () => {
     try {
       const res = await axios.get("/api/requisitions");
@@ -51,9 +53,11 @@ const Table = forwardRef((props, ref) => {
 
   useImperativeHandle(ref, () => ({ fetchRows }));
 
+  // Socket listeners
   useEffect(() => {
     fetchRows();
 
+    // Editing indicators
     socket.on("editing_status", (data) => {
       setEditingStatus((prev) => {
         const updated = { ...prev };
@@ -64,13 +68,30 @@ const Table = forwardRef((props, ref) => {
       });
     });
 
-    socket.on("requisitions_updated", () => {
-      fetchRows();
+    // Real-time updates (edit/new row)
+    socket.on("requisitions_updated", (updatedRow) => {
+      if (!updatedRow) return;
+      setRows((prev) => {
+        const exists = prev.find(
+          (r) => r.requirementid === updatedRow.requirementid
+        );
+        if (exists) {
+          // update row in place
+          return prev.map((r) =>
+            r.requirementid === updatedRow.requirementid
+              ? { ...r, ...updatedRow }
+              : r
+          );
+        } else {
+          // new row added
+          return [...prev, updatedRow];
+        }
+      });
     });
 
     return () => {
-      socket.off("requisitions_updated");
       socket.off("editing_status");
+      socket.off("requisitions_updated");
     };
   }, []);
 
@@ -86,24 +107,20 @@ const Table = forwardRef((props, ref) => {
 
   const isNonWorkable = (row) => row.status !== "Open" || row.slots === 0;
 
+  // Editing
   const handleEdit = (reqId, field, value) => {
-    socket.emit("editing_status", {
-      requirementid: reqId,
-      user: currentUser,
-      field,
-    });
-
+    socket.emit("editing_status", { requirementid: reqId, user: currentUser, field });
     setEditing((prev) => ({
       ...prev,
       [reqId]: { ...prev[reqId], [field]: value },
     }));
   };
 
+  // Save on blur
   const handleSave = async (reqId) => {
     const updatedFields = editing[reqId];
     if (!updatedFields) return;
 
-    // Prevent saving completely blank or undefined values
     const cleanedFields = Object.fromEntries(
       Object.entries(updatedFields).filter(
         ([, val]) => val !== undefined && val !== null && val !== ""
@@ -111,23 +128,19 @@ const Table = forwardRef((props, ref) => {
     );
 
     try {
-      await axios.put(`/api/requisitions/${reqId}`, cleanedFields);
+      const res = await axios.put(`/api/requisitions/${reqId}`, cleanedFields);
+      const updatedRow = res.data;
 
-      // ✅ Immediately update UI (no waiting for socket)
+      // ✅ Immediately update local UI
       setRows((prevRows) =>
         prevRows.map((r) =>
-          r.requirementid === reqId ? { ...r, ...cleanedFields } : r
+          r.requirementid === reqId ? { ...r, ...updatedRow } : r
         )
       );
 
-      // ✅ Ensure everyone else gets the update
-      await fetchRows();
-      socket.emit("requisitions_updated");
-      socket.emit("editing_status", {
-        requirementid: reqId,
-        user: null,
-        field: null,
-      });
+      // ✅ Notify everyone in real-time
+      socket.emit("requisitions_updated", updatedRow);
+      socket.emit("editing_status", { requirementid: reqId, user: null, field: null });
 
       setEditing((prev) => {
         const copy = { ...prev };
@@ -136,20 +149,11 @@ const Table = forwardRef((props, ref) => {
       });
     } catch (err) {
       alert(err.response?.data?.message || "Error saving changes");
-      socket.emit("editing_status", {
-        requirementid: reqId,
-        user: null,
-        field: null,
-      });
-      await fetchRows();
-      setEditing((prev) => {
-        const copy = { ...prev };
-        delete copy[reqId];
-        return copy;
-      });
+      socket.emit("editing_status", { requirementid: reqId, user: null, field: null });
     }
   };
 
+  // Toggle working checkbox
   const toggleWorking = async (row) => {
     if (!row.requirementid) return;
     const assignedUsers = row.assigned_recruiters || [];
@@ -159,6 +163,7 @@ const Table = forwardRef((props, ref) => {
         (r.assigned_recruiters || []).includes(currentUser) &&
         r.requirementid !== row.requirementid
     );
+
     if (!isAssigned && alreadyWorking) {
       alert("You are already working on another requirement.");
       return;
@@ -176,12 +181,17 @@ const Table = forwardRef((props, ref) => {
     else newWorkingTimes[currentUser] = new Date();
 
     try {
-      await axios.put(`/api/requisitions/${row.requirementid}`, {
+      const res = await axios.put(`/api/requisitions/${row.requirementid}`, {
         assigned_recruiters: newAssigned,
         working_times: newWorkingTimes,
       });
-      socket.emit("requisitions_updated");
-      fetchRows();
+      const updatedRow = res.data;
+      setRows((prev) =>
+        prev.map((r) =>
+          r.requirementid === row.requirementid ? { ...r, ...updatedRow } : r
+        )
+      );
+      socket.emit("requisitions_updated", updatedRow);
     } catch (err) {
       alert(err.response?.data?.message || "Error updating working status");
     }
@@ -202,6 +212,7 @@ const Table = forwardRef((props, ref) => {
     );
   };
 
+  // Sorting and filtering
   const handleSort = (field) => {
     let direction = "ascending";
     if (sortConfig.field === field && sortConfig.direction === "ascending") {
@@ -245,6 +256,7 @@ const Table = forwardRef((props, ref) => {
     currentPage * rowsPerPage
   );
 
+  // Column resize
   const startResize = (e, col) => {
     e.preventDefault();
     const startX = e.clientX;
@@ -274,6 +286,7 @@ const Table = forwardRef((props, ref) => {
     });
   };
 
+  // ===== JSX =====
   return (
     <div className="p-4">
       <div className="flex justify-center mb-4">

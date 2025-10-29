@@ -16,20 +16,18 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" },
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
 app.use(cors());
 app.use(bodyParser.json());
 
-// ===== DATABASE CONNECTION =====
+// ===== DATABASE =====
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: { rejectUnauthorized: false },
 });
 
-// Retry connection until DB is ready
+// Retry connection
 const connectWithRetry = async (retries = 5, delay = 5000) => {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -37,9 +35,7 @@ const connectWithRetry = async (retries = 5, delay = 5000) => {
       console.log("✅ Connected to PostgreSQL");
       return;
     } catch (err) {
-      console.error(
-        `❌ Database connection failed (attempt ${attempt}/${retries})`
-      );
+      console.error(`❌ DB connection failed (attempt ${attempt}/${retries})`);
       if (attempt === retries) throw err;
       await new Promise((res) => setTimeout(res, delay));
     }
@@ -65,47 +61,55 @@ const ensureTable = async () => {
 };
 
 // ===== SOCKET.IO HANDLING =====
-const activeEditors = new Map(); // { req_id: { user, column, socket } }
+const activeEditors = new Map(); // { requirementid: { user, field, socket } }
 
 io.on("connection", (socket) => {
   console.log("🔌 Client connected:", socket.id);
 
-  // When user starts/stops editing a field
+  // User starts/stops editing
   socket.on("editing_status", (data) => {
-    const { req_id, column, isEditing, user } = data;
+    const { requirementid, field, user, isEditing } = data;
 
     if (isEditing) {
-      activeEditors.set(req_id, { user, column, socket: socket.id });
+      activeEditors.set(requirementid, { user, field, socket: socket.id });
     } else {
-      activeEditors.delete(req_id);
+      activeEditors.delete(requirementid);
     }
 
-    // Broadcast edit lock state to all others
-    socket.broadcast.emit("editing_status", {
-      req_id,
-      column,
-      isEditing,
-      user,
-    });
+    // Notify everyone else
+    socket.broadcast.emit("editing_status", data);
   });
 
-  // When one user updates a requisition, notify all others
-  socket.on("req_updated", (updatedRow) => {
-    socket.broadcast.emit("req_updated", updatedRow);
+  // Broadcast live requisition updates
+  socket.on("requisitions_updated", (updatedRow) => {
+    console.log("📡 Broadcasting update:", updatedRow.requirementid);
+    io.emit("requisitions_updated", updatedRow); // broadcast to all
   });
 
-  // Clean up on disconnect
+  // Broadcast new requisition creation
+  socket.on("requisition_created", (newRow) => {
+    console.log("📡 Broadcasting new requisition:", newRow.requirementid);
+    io.emit("requisition_created", newRow);
+  });
+
+  // Broadcast requisition deletion
+  socket.on("requisition_deleted", (reqId) => {
+    console.log("📡 Broadcasting deletion:", reqId);
+    io.emit("requisition_deleted", reqId);
+  });
+
+  // Cleanup on disconnect
   socket.on("disconnect", () => {
     console.log("❌ Client disconnected:", socket.id);
 
-    for (const [req_id, editor] of activeEditors.entries()) {
+    for (const [reqId, editor] of activeEditors.entries()) {
       if (editor.socket === socket.id) {
-        activeEditors.delete(req_id);
+        activeEditors.delete(reqId);
         socket.broadcast.emit("editing_status", {
-          req_id,
-          column: editor.column,
+          requirementid: reqId,
+          field: editor.field,
+          user: null,
           isEditing: false,
-          user: editor.user,
         });
       }
     }
@@ -139,7 +143,7 @@ app.post("/api/requisitions", async (req, res) => {
         .json({ message: "Requirement ID is mandatory to create a new row." });
     }
 
-    // Ensure unique requirement ID
+    // Ensure unique ID
     const exists = await pool.query(
       "SELECT requirementid FROM requisitions WHERE requirementid = $1",
       [requirementid]
@@ -148,7 +152,6 @@ app.post("/api/requisitions", async (req, res) => {
       return res.status(400).json({ message: "Requirement ID already exists." });
     }
 
-    // Insert new row
     const result = await pool.query(
       `INSERT INTO requisitions (requirementid, title, client, slots, status, assigned_recruiters, working_times)
        VALUES ($1, $2, $3, $4, $5, '{}', '{}') RETURNING *`,
@@ -156,7 +159,7 @@ app.post("/api/requisitions", async (req, res) => {
     );
 
     const newRow = result.rows[0];
-    io.emit("req_updated", newRow); // realtime sync
+    io.emit("requisition_created", newRow); // real-time broadcast
     res.json(newRow);
   } catch (err) {
     console.error("❌ Error adding requisition:", err);
@@ -177,8 +180,6 @@ app.put("/api/requisitions/:id", async (req, res) => {
     if (!rows.length) return res.status(404).send("Requisition not found");
 
     const assigned = rows[0].assigned_recruiters || [];
-
-    // Prevent changing locked fields
     if (assigned.length > 0 && ("status" in fields || "slots" in fields)) {
       return res.status(400).json({
         message:
@@ -192,20 +193,40 @@ app.put("/api/requisitions/:id", async (req, res) => {
     const setClauses = keys.map((key, i) => `${key.toLowerCase()}=$${i + 1}`);
     const values = Object.values(fields);
 
-    const updateQuery = `
-      UPDATE requisitions
-      SET ${setClauses.join(", ")}
-      WHERE requirementid=$${keys.length + 1}
-      RETURNING *;
-    `;
-    const result = await pool.query(updateQuery, [...values, id]);
+    const result = await pool.query(
+      `UPDATE requisitions
+       SET ${setClauses.join(", ")}, createdat = NOW()
+       WHERE requirementid=$${keys.length + 1}
+       RETURNING *;`,
+      [...values, id]
+    );
 
     const updatedRow = result.rows[0];
-    io.emit("req_updated", updatedRow); // broadcast live update
+    io.emit("requisitions_updated", updatedRow); // real-time broadcast
     res.json(updatedRow);
   } catch (err) {
     console.error("❌ Error updating requisition:", err);
     res.status(500).send("Error updating requisition");
+  }
+});
+
+// Delete requisition (optional future use)
+app.delete("/api/requisitions/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      "DELETE FROM requisitions WHERE requirementid=$1 RETURNING requirementid",
+      [id]
+    );
+    if (!result.rowCount) {
+      return res.status(404).json({ message: "Requisition not found" });
+    }
+
+    io.emit("requisition_deleted", id);
+    res.json({ message: "Requisition deleted", id });
+  } catch (err) {
+    console.error("❌ Error deleting requisition:", err);
+    res.status(500).send("Error deleting requisition");
   }
 });
 
