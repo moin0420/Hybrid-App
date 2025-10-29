@@ -9,8 +9,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 dotenv.config();
-
 const { Pool } = pkg;
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -25,6 +25,31 @@ app.use(bodyParser.json());
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: { rejectUnauthorized: false },
+});
+
+// ====== REAL-TIME DB LISTENER ======
+pool.connect((err, client, done) => {
+  if (err) {
+    console.error("❌ Failed to connect for LISTEN/NOTIFY:", err);
+    return;
+  }
+  console.log("👂 Listening for DB changes on 'requisitions_change'");
+
+  client.on("notification", (msg) => {
+    try {
+      const payload = JSON.parse(msg.payload);
+      console.log("📡 DB change detected:", payload);
+
+      // Broadcast to all connected clients
+      if (payload.operation === "INSERT") io.emit("requisition_created", payload.new);
+      if (payload.operation === "UPDATE") io.emit("requisitions_updated", payload.new);
+      if (payload.operation === "DELETE") io.emit("requisition_deleted", payload.old.requirementid);
+    } catch (e) {
+      console.error("❌ Error parsing notification payload:", e);
+    }
+  });
+
+  client.query("LISTEN requisitions_change");
 });
 
 // Retry connection
@@ -69,7 +94,6 @@ io.on("connection", (socket) => {
   // User starts/stops editing
   socket.on("editing_status", (data) => {
     const { requirementid, field, user, isEditing } = data;
-
     if (isEditing) {
       activeEditors.set(requirementid, { user, field, socket: socket.id });
     } else {
@@ -83,7 +107,7 @@ io.on("connection", (socket) => {
   // Broadcast live requisition updates
   socket.on("requisitions_updated", (updatedRow) => {
     console.log("📡 Broadcasting update:", updatedRow.requirementid);
-    io.emit("requisitions_updated", updatedRow); // broadcast to all
+    io.emit("requisitions_updated", updatedRow);
   });
 
   // Broadcast new requisition creation
@@ -101,7 +125,6 @@ io.on("connection", (socket) => {
   // Cleanup on disconnect
   socket.on("disconnect", () => {
     console.log("❌ Client disconnected:", socket.id);
-
     for (const [reqId, editor] of activeEditors.entries()) {
       if (editor.socket === socket.id) {
         activeEditors.delete(reqId);
@@ -134,8 +157,8 @@ app.get("/api/requisitions", async (req, res) => {
 // Create new requisition
 app.post("/api/requisitions", async (req, res) => {
   try {
-    let { requirementid, requirementId, title, client, slots, status } = req.body;
-    requirementid = requirementid || requirementId;
+let { requirementid, requirementId, title, client, slots, status } = req.body;
+requirementid = (requirementid || requirementId || "").replace(/\s+/g, ""); // remove all spaces
 
     if (!requirementid || requirementid.trim() === "") {
       return res
@@ -153,8 +176,12 @@ app.post("/api/requisitions", async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO requisitions (requirementid, title, client, slots, status, assigned_recruiters, working_times)
-       VALUES ($1, $2, $3, $4, $5, '{}', '{}') RETURNING *`,
+      `
+      INSERT INTO requisitions
+        (requirementid, title, client, slots, status, assigned_recruiters, working_times)
+      VALUES ($1, $2, $3, $4, $5, '{}', '{}')
+      RETURNING *;
+      `,
       [requirementid, title || "", client || "", slots || 1, status || "Open"]
     );
 
@@ -194,15 +221,17 @@ app.put("/api/requisitions/:id", async (req, res) => {
     const values = Object.values(fields);
 
     const result = await pool.query(
-      `UPDATE requisitions
-       SET ${setClauses.join(", ")}, createdat = NOW()
-       WHERE requirementid=$${keys.length + 1}
-       RETURNING *;`,
+      `
+      UPDATE requisitions
+      SET ${setClauses.join(", ")}, createdat = NOW()
+      WHERE requirementid=$${keys.length + 1}
+      RETURNING *;
+      `,
       [...values, id]
     );
 
     const updatedRow = result.rows[0];
-    io.emit("requisitions_updated", updatedRow); // real-time broadcast
+    io.emit("requisitions_updated", updatedRow);
     res.json(updatedRow);
   } catch (err) {
     console.error("❌ Error updating requisition:", err);
@@ -210,7 +239,7 @@ app.put("/api/requisitions/:id", async (req, res) => {
   }
 });
 
-// Delete requisition (optional future use)
+// Delete requisition
 app.delete("/api/requisitions/:id", async (req, res) => {
   const { id } = req.params;
   try {
@@ -221,7 +250,6 @@ app.delete("/api/requisitions/:id", async (req, res) => {
     if (!result.rowCount) {
       return res.status(404).json({ message: "Requisition not found" });
     }
-
     io.emit("requisition_deleted", id);
     res.json({ message: "Requisition deleted", id });
   } catch (err) {
