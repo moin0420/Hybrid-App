@@ -153,38 +153,77 @@ const Table = forwardRef((props, ref) => {
     }
   };
 
-  // Toggle working checkbox
+  // ==============================
+  // Toggle working checkbox (auto-switch behavior)
+  // ==============================
   const toggleWorking = async (row) => {
     if (!row.requirementid) return;
+
     const assignedUsers = row.assigned_recruiters || [];
     const isAssigned = assignedUsers.includes(currentUser);
+
+    // Guard: don't allow adding a 3rd recruiter to a row the user isn't already on
+    if (!isAssigned && assignedUsers.length >= 2) {
+      alert("Two recruiters are already working on this requirement.");
+      return;
+    }
+
+    // Find if the user is already working on a different row
     const alreadyWorking = rows.find(
       (r) =>
         (r.assigned_recruiters || []).includes(currentUser) &&
         r.requirementid !== row.requirementid
     );
 
-    if (!isAssigned && alreadyWorking) {
-      alert("You are already working on another requirement.");
-      return;
-    }
-    if (!isAssigned && assignedUsers.length >= 2) {
-      alert("Two recruiters are already working on this requirement.");
-      return;
-    }
-
-    const newAssigned = isAssigned
-      ? assignedUsers.filter((u) => u !== currentUser)
-      : [...assignedUsers, currentUser];
-    const newWorkingTimes = { ...(row.working_times || {}) };
-    if (isAssigned) delete newWorkingTimes[currentUser];
-    else newWorkingTimes[currentUser] = new Date();
-
     try {
+      // If user is switching to a new row, unassign from old one first
+      if (!isAssigned && alreadyWorking) {
+        const oldAssigned = (alreadyWorking.assigned_recruiters || []).filter(
+          (u) => u !== currentUser
+        );
+        const oldWorkingTimes = { ...(alreadyWorking.working_times || {}) };
+        delete oldWorkingTimes[currentUser];
+
+        // Persist removal on old row
+        const oldRes = await axios.put(
+          `/api/requisitions/${alreadyWorking.requirementid}`,
+          {
+            assigned_recruiters: oldAssigned,
+            working_times: oldWorkingTimes,
+          }
+        );
+
+        const oldUpdatedRow = oldRes.data || {
+          ...alreadyWorking,
+          assigned_recruiters: oldAssigned,
+          working_times: oldWorkingTimes,
+        };
+
+        // Update UI locally and broadcast
+        setRows((prev) =>
+          prev.map((r) =>
+            r.requirementid === alreadyWorking.requirementid
+              ? { ...r, ...oldUpdatedRow }
+              : r
+          )
+        );
+        socket.emit("requisitions_updated", oldUpdatedRow);
+      }
+
+      // Now toggle for the clicked row
+      const newAssigned = isAssigned
+        ? assignedUsers.filter((u) => u !== currentUser)
+        : [...assignedUsers, currentUser];
+
+      const newWorkingTimes = { ...(row.working_times || {}) };
+      if (isAssigned) delete newWorkingTimes[currentUser];
+      else newWorkingTimes[currentUser] = new Date();
+
       const res = await axios.put(`/api/requisitions/${row.requirementid}`, {
         assigned_recruiters: newAssigned,
         working_times: newWorkingTimes,
       });
+
       const updatedRow = res.data;
       setRows((prev) =>
         prev.map((r) =>
@@ -197,19 +236,14 @@ const Table = forwardRef((props, ref) => {
     }
   };
 
+  // ==============================
+  // Checkbox disabling: only for non-workable or full rows
+  // ==============================
   const disableCheckbox = (row) => {
     const assignedUsers = row.assigned_recruiters || [];
     const nonWorkable = isNonWorkable(row);
-    const userWorkingElsewhere = rows.some(
-      (r) =>
-        (r.assigned_recruiters || []).includes(currentUser) &&
-        r.requirementid !== row.requirementid
-    );
-    return (
-      nonWorkable ||
-      (!assignedUsers.includes(currentUser) &&
-        (assignedUsers.length >= 2 || userWorkingElsewhere))
-    );
+    // allow unchecking even if at limit by letting assigned users interact
+    return nonWorkable || (assignedUsers.length >= 2 && !assignedUsers.includes(currentUser));
   };
 
   // Sorting and filtering
