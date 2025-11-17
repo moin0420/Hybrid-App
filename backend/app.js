@@ -9,7 +9,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 dotenv.config();
-const { Pool } = pkg;
+const { Pool, Client } = pkg;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,65 +25,84 @@ app.use(bodyParser.json());
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: { rejectUnauthorized: false },
+  // optional: you can tune pool size here
+  // max: 10,
 });
 
-// ====== REAL-TIME DB LISTENER ======
-pool.connect((err, client, done) => {
-  if (err) {
-    console.error("❌ Failed to connect for LISTEN/NOTIFY:", err);
-    return;
-  }
-  console.log("👂 Listening for DB changes on 'requisitions_change'");
+// Log pool errors on idle clients so they don't crash the process
+pool.on("error", (err, client) => {
+  console.error("❌ Unexpected error on idle PostgreSQL client:", err);
+});
 
-  client.on("notification", (msg) => {
+// ====== REAL-TIME DB LISTENER (Dedicated Client, robust reconnect) ======
+let listenerClient = null;
+let listenerReconnectDelay = 2000; // initial backoff
+
+const startListener = async () => {
+  // If an old client exists, try to end it first
+  if (listenerClient) {
     try {
-      const payload = JSON.parse(msg.payload);
-      console.log("📡 DB change detected:", payload);
-
-      // Broadcast to all connected clients
-      if (payload.operation === "INSERT") io.emit("requisition_created", payload.new);
-      if (payload.operation === "UPDATE") io.emit("requisitions_updated", payload.new);
-      if (payload.operation === "DELETE") io.emit("requisition_deleted", payload.old.requirementid);
+      await listenerClient.end();
     } catch (e) {
-      console.error("❌ Error parsing notification payload:", e);
+      // ignore
     }
+    listenerClient = null;
+  }
+
+  listenerClient = new Client({
+    connectionString: process.env.DB_URL,
+    ssl: { rejectUnauthorized: false },
   });
 
-  client.query("LISTEN requisitions_change");
-});
+  // Prevent uncaught exceptions from crashing Node
+  listenerClient.on("error", (err) => {
+    console.error("❌ Listener client error:", err);
+    // we'll reconnect when 'end' happens or via the catch below
+  });
 
-// Retry connection
-const connectWithRetry = async (retries = 5, delay = 5000) => {
-  for (let attempt = 1; attempt <= retries; attempt++) {
+  listenerClient.on("end", () => {
+    console.warn("⚠️ Listener client connection ended. Reconnecting in", listenerReconnectDelay, "ms");
+    setTimeout(() => startListener().catch(console.error), listenerReconnectDelay);
+    // exponential backoff with cap
+    listenerReconnectDelay = Math.min(30000, Math.floor(listenerReconnectDelay * 1.5));
+  });
+
+  try {
+    await listenerClient.connect();
+    console.log("👂 Dedicated listener connected for 'requisitions_change'");
+
+    // reset backoff on successful connect
+    listenerReconnectDelay = 2000;
+
+    listenerClient.on("notification", (msg) => {
+      try {
+        if (!msg || !msg.payload) return;
+        const payload = JSON.parse(msg.payload);
+        console.log("📡 DB change detected:", payload);
+
+        if (payload.operation === "INSERT") io.emit("requisition_created", payload.new);
+        if (payload.operation === "UPDATE") io.emit("requisitions_updated", payload.new);
+        if (payload.operation === "DELETE") io.emit("requisition_deleted", payload.old?.requirementid);
+      } catch (e) {
+        console.error("❌ Error parsing notification payload:", e);
+      }
+    });
+
+    await listenerClient.query("LISTEN requisitions_change");
+  } catch (err) {
+    console.error("❌ Failed to start listener, will retry:", err);
     try {
-      await pool.query("SELECT NOW()");
-      console.log("✅ Connected to PostgreSQL");
-      return;
-    } catch (err) {
-      console.error(`❌ DB connection failed (attempt ${attempt}/${retries})`);
-      if (attempt === retries) throw err;
-      await new Promise((res) => setTimeout(res, delay));
+      await listenerClient.end();
+    } catch (e) {
+      // ignore
     }
+    listenerClient = null;
+    setTimeout(() => startListener().catch(console.error), listenerReconnectDelay);
   }
 };
 
-// Ensure table exists
-const ensureTable = async () => {
-  const query = `
-    CREATE TABLE IF NOT EXISTS requisitions (
-      requirementid TEXT PRIMARY KEY,
-      title TEXT,
-      client TEXT,
-      assigned_recruiters TEXT[],
-      working_times JSONB,
-      slots INTEGER,
-      status TEXT,
-      createdat TIMESTAMP DEFAULT NOW()
-    );
-  `;
-  await pool.query(query);
-  console.log("✅ Table checked/created");
-};
+// Start the dedicated listener
+startListener().catch((e) => console.error("Listener startup error:", e));
 
 // ===== SOCKET.IO HANDLING =====
 const activeEditors = new Map(); // { requirementid: { user, field, socket } }
@@ -106,13 +125,13 @@ io.on("connection", (socket) => {
 
   // Broadcast live requisition updates
   socket.on("requisitions_updated", (updatedRow) => {
-    console.log("📡 Broadcasting update:", updatedRow.requirementid);
+    console.log("📡 Broadcasting update:", updatedRow?.requirementid);
     io.emit("requisitions_updated", updatedRow);
   });
 
   // Broadcast new requisition creation
   socket.on("requisition_created", (newRow) => {
-    console.log("📡 Broadcasting new requisition:", newRow.requirementid);
+    console.log("📡 Broadcasting new requisition:", newRow?.requirementid);
     io.emit("requisition_created", newRow);
   });
 
@@ -144,9 +163,7 @@ io.on("connection", (socket) => {
 // Fetch all requisitions
 app.get("/api/requisitions", async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT * FROM requisitions ORDER BY requirementid ASC"
-    );
+    const result = await pool.query("SELECT * FROM requisitions ORDER BY requirementid ASC");
     res.json(result.rows);
   } catch (err) {
     console.error("❌ Error fetching requisitions:", err);
@@ -157,20 +174,15 @@ app.get("/api/requisitions", async (req, res) => {
 // Create new requisition
 app.post("/api/requisitions", async (req, res) => {
   try {
-let { requirementid, requirementId, title, client, slots, status } = req.body;
-requirementid = (requirementid || requirementId || "").replace(/\s+/g, ""); // remove all spaces
+    let { requirementid, requirementId, title, client, slots, status } = req.body;
+    requirementid = (requirementid || requirementId || "").replace(/\s+/g, ""); // remove all spaces
 
     if (!requirementid || requirementid.trim() === "") {
-      return res
-        .status(400)
-        .json({ message: "Requirement ID is mandatory to create a new row." });
+      return res.status(400).json({ message: "Requirement ID is mandatory to create a new row." });
     }
 
     // Ensure unique ID
-    const exists = await pool.query(
-      "SELECT requirementid FROM requisitions WHERE requirementid = $1",
-      [requirementid]
-    );
+    const exists = await pool.query("SELECT requirementid FROM requisitions WHERE requirementid = $1", [requirementid]);
     if (exists.rows.length > 0) {
       return res.status(400).json({ message: "Requirement ID already exists." });
     }
@@ -200,17 +212,13 @@ app.put("/api/requisitions/:id", async (req, res) => {
   const fields = req.body;
 
   try {
-    const { rows } = await pool.query(
-      "SELECT assigned_recruiters, slots, status FROM requisitions WHERE requirementid=$1",
-      [id]
-    );
+    const { rows } = await pool.query("SELECT assigned_recruiters, slots, status FROM requisitions WHERE requirementid=$1", [id]);
     if (!rows.length) return res.status(404).send("Requisition not found");
 
     const assigned = rows[0].assigned_recruiters || [];
     if (assigned.length > 0 && ("status" in fields || "slots" in fields)) {
       return res.status(400).json({
-        message:
-          "A Recruiter is working on this req. Please ask them to stop working and try again.",
+        message: "A Recruiter is working on this req. Please ask them to stop working and try again.",
       });
     }
 
@@ -243,10 +251,7 @@ app.put("/api/requisitions/:id", async (req, res) => {
 app.delete("/api/requisitions/:id", async (req, res) => {
   const { id } = req.params;
   try {
-    const result = await pool.query(
-      "DELETE FROM requisitions WHERE requirementid=$1 RETURNING requirementid",
-      [id]
-    );
+    const result = await pool.query("DELETE FROM requisitions WHERE requirementid=$1 RETURNING requirementid", [id]);
     if (!result.rowCount) {
       return res.status(404).json({ message: "Requisition not found" });
     }
@@ -257,6 +262,38 @@ app.delete("/api/requisitions/:id", async (req, res) => {
     res.status(500).send("Error deleting requisition");
   }
 });
+
+// ====== DB INITIALIZATION HELPERS ======
+const connectWithRetry = async (retries = 5, delay = 5000) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await pool.query("SELECT NOW()");
+      console.log("✅ Connected to PostgreSQL");
+      return;
+    } catch (err) {
+      console.error(`❌ DB connection failed (attempt ${attempt}/${retries})`, err.message || err);
+      if (attempt === retries) throw err;
+      await new Promise((res) => setTimeout(res, delay));
+    }
+  }
+};
+
+const ensureTable = async () => {
+  const query = `
+    CREATE TABLE IF NOT EXISTS requisitions (
+      requirementid TEXT PRIMARY KEY,
+      title TEXT,
+      client TEXT,
+      assigned_recruiters TEXT[],
+      working_times JSONB,
+      slots INTEGER,
+      status TEXT,
+      createdat TIMESTAMP DEFAULT NOW()
+    );
+  `;
+  await pool.query(query);
+  console.log("✅ Table checked/created");
+};
 
 // ===== SERVE FRONTEND =====
 app.use(express.static(path.join(__dirname, "frontend")));
@@ -276,3 +313,25 @@ server.listen(PORT, async () => {
     process.exit(1);
   }
 });
+
+// ===== Graceful shutdown ======
+const shutdown = async () => {
+  console.log("Shutting down server...");
+  try {
+    if (listenerClient) await listenerClient.end();
+  } catch (e) {
+    // ignore
+  }
+  try {
+    await pool.end();
+  } catch (e) {
+    // ignore
+  }
+  process.exit(0);
+};
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+
+// Export app for testing (optional)
+export default app;
