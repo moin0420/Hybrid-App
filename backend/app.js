@@ -22,11 +22,13 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // ===== DATABASE =====
+// Reduced pool size and timeouts for serverless DB environments
 const pool = new Pool({
   connectionString: process.env.DB_URL,
   ssl: { rejectUnauthorized: false },
-  // optional: you can tune pool size here
-  // max: 10,
+  max: 5, // reduce concurrent connections from the pool
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
 });
 
 // Log pool errors on idle clients so they don't crash the process
@@ -34,17 +36,30 @@ pool.on("error", (err, client) => {
   console.error("❌ Unexpected error on idle PostgreSQL client:", err);
 });
 
-// ====== REAL-TIME DB LISTENER (Dedicated Client, robust reconnect) ======
+// ====== REAL-TIME DB LISTENER (Dedicated Client, robust reconnect + keepalive + heartbeat + max_conn handling) ======
 let listenerClient = null;
-let listenerReconnectDelay = 2000; // initial backoff
+let listenerReconnectDelay = 2000; // initial backoff (ms)
+let listenerHeartbeat = null;
+const MAX_BACKOFF = 5 * 60 * 1000; // 5 minutes for max-conn cases
+
+const isMaxConnError = (err) => {
+  if (!err) return false;
+  const msg = (err.message || "").toLowerCase();
+  const code = (err.code || "").toString();
+  return msg.includes("no more connections") || msg.includes("max_client_conn") || code === "08p01" || code === "08P01";
+};
 
 const startListener = async () => {
-  // If an old client exists, try to end it first
+  // Cleanup previous client and heartbeat if present
   if (listenerClient) {
     try {
+      if (listenerHeartbeat) {
+        clearInterval(listenerHeartbeat);
+        listenerHeartbeat = null;
+      }
       await listenerClient.end();
     } catch (e) {
-      // ignore
+      // ignore cleanup errors
     }
     listenerClient = null;
   }
@@ -52,28 +67,62 @@ const startListener = async () => {
   listenerClient = new Client({
     connectionString: process.env.DB_URL,
     ssl: { rejectUnauthorized: false },
+    // connectionTimeoutMillis: 10000 // optional per-client timeout
   });
 
-  // Prevent uncaught exceptions from crashing Node
+  // Defensive error handler
   listenerClient.on("error", (err) => {
-    console.error("❌ Listener client error:", err);
-    // we'll reconnect when 'end' happens or via the catch below
+    console.error("❌ Listener client error:", err && err.stack ? err.stack : err);
+    // rely on 'end' event and reconnect logic
   });
 
   listenerClient.on("end", () => {
     console.warn("⚠️ Listener client connection ended. Reconnecting in", listenerReconnectDelay, "ms");
+    // stop heartbeat if any
+    if (listenerHeartbeat) {
+      clearInterval(listenerHeartbeat);
+      listenerHeartbeat = null;
+    }
+    // schedule reconnect
     setTimeout(() => startListener().catch(console.error), listenerReconnectDelay);
     // exponential backoff with cap
-    listenerReconnectDelay = Math.min(30000, Math.floor(listenerReconnectDelay * 1.5));
+    listenerReconnectDelay = Math.min(MAX_BACKOFF, Math.floor(listenerReconnectDelay * 1.5));
   });
 
   try {
     await listenerClient.connect();
+
+    // After successful connect, reset reconnect delay
+    listenerReconnectDelay = 2000;
     console.log("👂 Dedicated listener connected for 'requisitions_change'");
 
-    // reset backoff on successful connect
-    listenerReconnectDelay = 2000;
+    // set socket keepalive if available (helps NAT/load-balancer idle kills)
+    try {
+      const s = listenerClient.connection && listenerClient.connection.stream;
+      if (s && typeof s.setKeepAlive === "function") {
+        s.setKeepAlive(true, 10000); // initialDelay 10s
+        if (typeof s.setNoDelay === "function") s.setNoDelay(true);
+      }
+    } catch (kaErr) {
+      console.warn("Could not set socket keepalive:", kaErr && kaErr.message ? kaErr.message : kaErr);
+    }
 
+    // lightweight heartbeat to keep connection alive and detect broken sockets earlier
+    // run every 25 seconds (choose interval shorter than your provider's idle timeout)
+    listenerHeartbeat = setInterval(async () => {
+      try {
+        await listenerClient.query("SELECT 1");
+      } catch (hbErr) {
+        console.warn("Listener heartbeat failed, forcing disconnect to trigger reconnect:", hbErr && hbErr.message ? hbErr.message : hbErr);
+        try {
+          await listenerClient.end();
+        } catch (e) {
+          // ignore
+        }
+      }
+    }, 25 * 1000);
+
+    // Handle notifications
     listenerClient.on("notification", (msg) => {
       try {
         if (!msg || !msg.payload) return;
@@ -90,13 +139,28 @@ const startListener = async () => {
 
     await listenerClient.query("LISTEN requisitions_change");
   } catch (err) {
-    console.error("❌ Failed to start listener, will retry:", err);
+    console.error("❌ Failed to start listener, will retry:", err && err.stack ? err.stack : err);
+
+    // If DB says "no more connections", back off much harder to avoid hammering
+    if (isMaxConnError(err)) {
+      console.warn("DB reports max connections reached. Backing off for", MAX_BACKOFF / 1000, "seconds.");
+      listenerReconnectDelay = MAX_BACKOFF;
+    } else {
+      // otherwise increase backoff gradually
+      listenerReconnectDelay = Math.min(MAX_BACKOFF, Math.floor(listenerReconnectDelay * 1.5));
+    }
+
     try {
+      if (listenerHeartbeat) {
+        clearInterval(listenerHeartbeat);
+        listenerHeartbeat = null;
+      }
       await listenerClient.end();
     } catch (e) {
       // ignore
     }
     listenerClient = null;
+
     setTimeout(() => startListener().catch(console.error), listenerReconnectDelay);
   }
 };
