@@ -40,6 +40,7 @@ const pool = new Pool({
   max: 5, // reduce concurrent connections from the pool
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
+  application_name: process.env.PG_APP_NAME || "hybrid-app-backend"
 });
 
 // Log pool errors on idle clients so they don't crash the process
@@ -378,15 +379,18 @@ app.get("*", (req, res) => {
 
 // ===== START SERVER (bind to 0.0.0.0 for container platforms) =====
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, "0.0.0.0", async () => {
-  try {
-    await connectWithRetry();
-    await ensureTable();
-    console.log(`🚀 Server running on port ${PORT}`);
-  } catch (err) {
-    console.error("❌ Could not connect to database:", err);
-    process.exit(1);
-  }
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server bound and listening on 0.0.0.0:${PORT} — responding to /healthz immediately`);
+  (async () => {
+    try {
+      await connectWithRetry();
+      await ensureTable();
+      console.log('✅ DB ready and table ensured');
+    } catch (err) {
+      console.error('❌ DB init error (non-fatal for listener):', err);
+      // keep server up; log errors so we can see them
+    }
+  })();
 });
 
 // ===== Graceful shutdown ======
