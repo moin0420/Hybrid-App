@@ -21,6 +21,17 @@ const io = new Server(server, { cors: { origin: "*" } });
 app.use(cors());
 app.use(bodyParser.json());
 
+// ---------- Diagnostic middleware / health ----------
+app.get("/healthz", (req, res) => res.send("ok"));
+
+app.use((req, res, next) => {
+  if (req.path.startsWith("/socket.io")) {
+    console.log("INCOMING SOCKET.IO REQ", req.method, req.originalUrl, new Date().toISOString());
+  }
+  next();
+});
+// --------------------------------------------------
+
 // ===== DATABASE =====
 // Reduced pool size and timeouts for serverless DB environments
 const pool = new Pool({
@@ -365,9 +376,9 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "frontend", "index.html"));
 });
 
-// ===== START SERVER =====
+// ===== START SERVER (bind to 0.0.0.0 for container platforms) =====
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, async () => {
+server.listen(PORT, "0.0.0.0", async () => {
   try {
     await connectWithRetry();
     await ensureTable();
